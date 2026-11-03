@@ -19,8 +19,6 @@ sub init()
     m.accPill = m.top.findNode("accPill")
     m.accDot = m.top.findNode("accDot")
     m.accText = m.top.findNode("accText")
-    m.railPanel = m.top.findNode("railPanel")
-    m.railPanelLine = m.top.findNode("railPanelLine")
     m.railItemsGroup = m.top.findNode("railItems")
     m.infoTimer = m.top.findNode("infoTimer")
     m.rotTimer = m.top.findNode("rotTimer")
@@ -284,6 +282,11 @@ sub showItem(e as Object, featured as Boolean)
         end if
     end if
     m.badgeText.text = badge
+    if badge = "EN VIVO"
+        m.badge.uri = "pkg:/images/pill_cyan.9.png"
+    else
+        m.badge.uri = "pkg:/images/pill_red.9.png"
+    end if
     m.badge.visible = true
     m.badgeText.visible = true
     m.kicker.text = UCase(toS(e.cat))
@@ -350,7 +353,7 @@ end sub
 
 ' Ubica título, datos, sinopsis y botones uno debajo del otro según cuánto ocupa cada texto.
 sub layoutHero()
-    y = 104
+    y = 160
     th = m.title.boundingRect().height
     if th < 40 then th = 50
     y = y + th + 4
@@ -360,10 +363,10 @@ sub layoutHero()
     ph = 0
     if m.plot.text <> "" then ph = m.plot.boundingRect().height
     y = y + ph + 20
-    if y < 280 then y = 280
-    if y > 336 then y = 336
+    if y < 300 then y = 300
+    if y > 352 then y = 352
     m.btns.translation = [0, y]
-    m.dots.translation = [0, y + 62]
+    m.dots.translation = [452, y + 21]
 end sub
 
 ' ----------------------------------------------------------------- fichas de películas (sinopsis e imagen de fondo)
@@ -557,86 +560,86 @@ sub pressButton()
     end if
 end sub
 
-' ----------------------------------------------------------------- menú lateral
+' ----------------------------------------------------------------- menú de arriba (pestañas)
 
 sub buildRail()
     m.railDefs = [
-        { id: "search", label: "Buscar", icon: "pkg:/images/ic_search.png" },
-        { id: "home", label: "Inicio", icon: "pkg:/images/ic_home.png" },
-        { id: "live", label: "En vivo", icon: "pkg:/images/ic_live.png" },
-        { id: "movie", label: "Películas", icon: "pkg:/images/ic_movies.png" },
-        { id: "series", label: "Series", icon: "pkg:/images/ic_series.png" },
-        { id: "continue", label: "Seguir viendo", icon: "pkg:/images/ic_continue.png" },
-        { id: "settings", label: "Ajustes", icon: "pkg:/images/ic_settings.png" }
+        { id: "search", label: "", icon: "pkg:/images/ic_search.png" },
+        { id: "home", label: "Inicio", icon: "" },
+        { id: "live", label: "En vivo", icon: "" },
+        { id: "movie", label: "Películas", icon: "" },
+        { id: "series", label: "Series", icon: "" },
+        { id: "continue", label: "Seguir viendo", icon: "" },
+        { id: "settings", label: "", icon: "pkg:/images/ic_settings.png" }
     ]
     m.railNodes = []
+    x = 0
     for i = 0 to m.railDefs.Count() - 1
         d = m.railDefs[i]
-        y = 112 + i * 62
-        if d.id = "settings" then y = 636
         g = m.railItemsGroup.createChild("Group")
-        g.translation = [12, y]
+        g.translation = [x, 0]
         sel = g.createChild("Poster")
         sel.uri = "pkg:/images/rail_sel.9.png"
-        sel.width = 60
-        sel.height = 50
-        icon = g.createChild("Poster")
-        icon.uri = d.icon
-        icon.translation = [18, 13]
-        icon.width = 24
-        icon.height = 24
-        label = g.createChild("Label")
-        label.text = d.label
-        label.translation = [60, 0]
-        label.width = 160
-        label.height = 50
-        label.vertAlign = "center"
-        f = CreateObject("roSGNode", "Font")
-        f.uri = "pkg:/fonts/Poppins-Medium.ttf"
-        f.size = 17
-        label.font = f
+        sel.height = 40
+        icon = invalid
+        label = invalid
+        w = 44
+        if d.icon <> ""
+            icon = g.createChild("Poster")
+            icon.uri = d.icon
+            icon.translation = [11, 9]
+            icon.width = 22
+            icon.height = 22
+        else
+            label = g.createChild("Label")
+            label.text = d.label
+            label.height = 40
+            label.vertAlign = "center"
+            f = CreateObject("roSGNode", "Font")
+            f.uri = "pkg:/fonts/Poppins-Medium.ttf"
+            f.size = 16
+            label.font = f
+            tw = label.boundingRect().width
+            if tw < 30 then tw = Len(d.label) * 9
+            w = tw + 36
+            label.translation = [18, 0]
+            label.width = tw + 2
+        end if
+        sel.width = w
         m.railNodes.Push({ sel: sel, icon: icon, label: label })
+        x = x + w + 6
     end for
     updateRail()
 end sub
 
 sub updateRail()
     open = (m.zone = "rail")
-    m.railPanel.visible = open
-    m.railPanelLine.visible = open
     for i = 0 to m.railNodes.Count() - 1
         n = m.railNodes[i]
-        n.label.visible = open
+        isHome = (m.railDefs[i].id = "home")
+        lit = false
         if open
             n.sel.visible = (i = m.railIndex)
-            n.sel.width = 226
             if i = m.railIndex
-                n.icon.blendColor = "0xFFFFFFFF"
-                n.label.color = "0xFFFFFFFF"
-            else
-                n.icon.blendColor = "0x9A94B4FF"
-                n.label.color = "0xB4AECBFF"
+                n.sel.uri = "pkg:/images/rail_sel.9.png"
+                lit = true
             end if
         else
-            n.sel.visible = (m.railDefs[i].id = "home")
-            n.sel.width = 60
-            if m.railDefs[i].id = "home"
-                n.icon.blendColor = "0xFFFFFFFF"
-            else
-                n.icon.blendColor = "0x8E88A8FF"
-            end if
+            n.sel.visible = isHome
+            n.sel.uri = "pkg:/images/rail_focus.9.png"
+            lit = isHome
         end if
+        color = "0xB4AECBFF"
+        if lit then color = "0xFFFFFFFF"
+        if n.label <> invalid then n.label.color = color
+        if n.icon <> invalid then n.icon.blendColor = color
     end for
 end sub
 
 sub pressRail()
     id = m.railDefs[m.railIndex].id
-    if id = "home"
-        setZone("hero")
-        return
-    end if
     setZone("hero")
-    m.top.event = { type: "open", target: id }
+    if id <> "home" then m.top.event = { type: "open", target: id }
 end sub
 
 ' ----------------------------------------------------------------- foco y teclas
@@ -674,13 +677,13 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
         return true
     end if
     if m.zone = "rail"
-        if key = "up"
+        if key = "left"
             if m.railIndex > 0
                 m.railIndex = m.railIndex - 1
                 updateRail()
             end if
             return true
-        else if key = "down"
+        else if key = "right"
             if m.railIndex < m.railDefs.Count() - 1
                 m.railIndex = m.railIndex + 1
                 updateRail()
@@ -689,10 +692,8 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
         else if key = "OK"
             pressRail()
             return true
-        else if key = "right" or key = "back"
-            target = m.prevZone
-            if target = invalid or target = "rail" then target = "hero"
-            setZone(target)
+        else if key = "down" or key = "back"
+            setZone("hero")
             return true
         end if
         return true
@@ -704,10 +705,11 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
             if m.btnIndex > 0
                 m.btnIndex = m.btnIndex - 1
                 updateButtons()
-            else
-                m.railIndex = 1
-                setZone("rail")
             end if
+            return true
+        else if key = "up"
+            m.railIndex = 1
+            setZone("rail")
             return true
         else if key = "right"
             if m.btnIndex < m.btnNodes.Count() - 1
@@ -729,8 +731,6 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
         setZone("hero")
         return true
     else if key = "left"
-        m.railIndex = 1
-        setZone("rail")
         return true
     end if
     return false
@@ -751,7 +751,7 @@ sub refreshInfo()
     end if
     acc = s.account
     line = "Cuenta activa"
-    m.accDot.color = "0x3DDC84FF"
+    m.accDot.color = "0x38D0FFFF"
     if acc.exp > 0
         days = (acc.exp - now) \ 86400
         if days < 0
@@ -764,11 +764,11 @@ sub refreshInfo()
     m.accText.text = line
     w = m.accText.boundingRect().width
     pillW = w + 46
-    x = 960 - pillW
-    m.accPill.translation = [x, 30]
+    x = 1232 - pillW
+    m.accPill.translation = [x, 86]
     m.accPill.width = pillW
-    m.accDot.translation = [x + 16, 43]
-    m.accText.translation = [x + 32, 30]
+    m.accDot.translation = [x + 16, 97]
+    m.accText.translation = [x + 32, 86]
     m.accPill.visible = true
     m.accDot.visible = true
     m.accText.visible = true

@@ -9,8 +9,8 @@
   <script type="text/brightscript" uri="pkg:/components/common.brs" />
   <children>
     <Rectangle id="base" width="1280" height="720" color="0x07060FFF" />
-    <Poster id="backdrop" translation="[380,0]" width="900" height="506" loadDisplayMode="scaleToZoom" loadWidth="1350" loadHeight="759" />
-    <Poster id="heroFade" uri="pkg:/images/hero_fade.png" translation="[380,0]" width="900" height="506" />
+    <Poster id="backdrop" translation="[0,0]" width="1280" height="600" loadDisplayMode="scaleToZoom" loadWidth="1350" loadHeight="759" />
+    <Poster id="heroFade" uri="pkg:/images/hero_fade_full.png" width="1280" height="600" />
     <Poster id="cover" translation="[60,92]" width="220" height="330" loadDisplayMode="scaleToZoom" loadWidth="330" loadHeight="495" />
     <Poster id="coverCorners" uri="pkg:/images/card_round.9.png" translation="[60,92]" width="220" height="330" />
     <Label id="name" translation="[316,84]" width="880" height="104" wrap="true" maxLines="2" lineSpacing="-6" color="0xF3F1FAFF">
