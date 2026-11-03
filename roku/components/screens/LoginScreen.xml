@@ -8,28 +8,35 @@
   <script type="text/brightscript" uri="pkg:/components/common.brs" />
   <children>
     <Poster id="bg" uri="pkg:/images/login_bg.jpg" width="1280" height="720" />
-    <Poster id="panel" uri="pkg:/images/panel.9.png" translation="[680,104]" width="500" height="512" />
-    <Label id="welcome" text="Bienvenido" translation="[724,140]" width="412" height="46" color="0xFFFFFFFF">
+    <Poster id="panel" uri="pkg:/images/login_panel.9.png" translation="[700,92]" width="500" height="496" />
+    <Poster translation="[744,132]" uri="pkg:/images/accent_line.png" width="44" height="4" />
+    <Label id="welcome" text="Iniciar sesión" translation="[744,146]" width="412" height="44" color="0xFFFFFFFF">
       <Font role="font" uri="pkg:/fonts/Poppins-Bold.ttf" size="30" />
     </Label>
-    <Label id="hint" text="Entra con tu usuario y contraseña." translation="[724,188]" width="412" height="26" color="0xB4AECBFF">
-      <Font role="font" uri="pkg:/fonts/Poppins-Regular.ttf" size="15" />
+    <Label id="hint" text="Usa el usuario y la contraseña de tu cuenta." translation="[744,192]" width="412" height="24" color="0xB4AECBFF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Regular.ttf" size="14" />
     </Label>
-    <Poster uri="pkg:/images/field_bg.9.png" translation="[724,236]" width="412" height="54" />
-    <Poster uri="pkg:/images/field_bg.9.png" translation="[724,302]" width="412" height="54" />
-    <Poster uri="pkg:/images/btn_glass.9.png" translation="[724,368]" width="412" height="54" />
-    <LabelList id="fields" translation="[724,236]" itemSize="[412,54]" itemSpacing="[0,12]" numRows="3" textHorizAlign="center" focusBitmapUri="pkg:/images/focus.9.png" color="0xE6E2F2FF" focusedColor="0xFFFFFFFF">
+    <Label text="USUARIO" translation="[746,236]" width="200" height="20" color="0x8E88A8FF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Bold.ttf" size="11" />
+    </Label>
+    <Label text="CONTRASEÑA" translation="[746,322]" width="200" height="20" color="0x8E88A8FF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Bold.ttf" size="11" />
+    </Label>
+    <Poster uri="pkg:/images/login_field.9.png" translation="[744,258]" width="412" height="52" />
+    <Poster uri="pkg:/images/login_field.9.png" translation="[744,344]" width="412" height="52" />
+    <Poster uri="pkg:/images/login_btn.9.png" translation="[744,430]" width="412" height="52" />
+    <LabelList id="fields" translation="[744,258]" itemSize="[412,52]" itemSpacing="[0,34]" numRows="3" textHorizAlign="center" focusBitmapUri="pkg:/images/login_focus.9.png" drawFocusFeedbackOnTop="true" color="0xF3F1FAFF" focusedColor="0xFFFFFFFF">
       <Font role="font" uri="pkg:/fonts/Poppins-Medium.ttf" size="17" />
       <Font role="focusedFont" uri="pkg:/fonts/Poppins-Bold.ttf" size="17" />
     </LabelList>
-    <Label id="error" translation="[724,440]" width="412" height="70" wrap="true" color="0xFF6B6BFF">
+    <Label id="error" translation="[744,500]" width="412" height="60" wrap="true" horizAlign="center" color="0xFF6B8AFF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Medium.ttf" size="13" />
+    </Label>
+    <Label id="status" translation="[744,500]" width="412" height="30" horizAlign="center" color="0xB4AECBFF">
       <Font role="font" uri="pkg:/fonts/Poppins-Medium.ttf" size="14" />
     </Label>
-    <Label id="status" translation="[724,440]" width="412" height="40" color="0xB4AECBFF">
-      <Font role="font" uri="pkg:/fonts/Poppins-Medium.ttf" size="14" />
-    </Label>
-    <Label id="lastTry" translation="[724,520]" width="412" height="80" wrap="true" color="0x8E88A8FF">
-      <Font role="font" uri="pkg:/fonts/Poppins-Regular.ttf" size="12" />
+    <Label id="lastTry" translation="[744,536]" width="412" height="44" wrap="true" horizAlign="center" color="0x6E6888FF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Regular.ttf" size="11" />
     </Label>
     <Timer id="autoTimer" duration="0.1" repeat="false" />
   </children>

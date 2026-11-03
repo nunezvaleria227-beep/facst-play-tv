@@ -37,8 +37,16 @@ end sub
 
 sub refreshList()
     c = m.list.content
-    c.getChild(0).title = "Usuario:   " + m.user
-    c.getChild(1).title = "Contraseña:   " + m.pass
+    if m.user = ""
+        c.getChild(0).title = "Escribe tu usuario"
+    else
+        c.getChild(0).title = m.user
+    end if
+    if m.pass = ""
+        c.getChild(1).title = "Escribe tu contraseña"
+    else
+        c.getChild(1).title = m.pass
+    end if
     c.getChild(2).title = "Entrar"
 end sub
 
