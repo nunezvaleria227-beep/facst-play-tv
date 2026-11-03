@@ -1,0 +1,22 @@
+params:
+    rasp_version: 1
+    default_keypress_wait: 2
+    channels:
+        Facst Play TV: dev
+steps:
+    - launch: Facst Play TV
+    - pause: 6
+    - press: ok
+    - pause: 2
+    - text: script-login
+    - press: back
+    - press: down
+    - press: ok
+    - pause: 2
+    - text: script-password
+    - press: back
+    - press: down
+    - press: ok
+    - pause: 10
+    - press: ok
+    - pause: 4

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="SeriesScreen" extends="Group">
+  <interface>
+    <field id="item" type="assocarray" onChange="onItem" />
+    <field id="event" type="assocarray" alwaysNotify="true" />
+    <function name="focusScreen" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/screens/SeriesScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <children>
+    <Rectangle id="base" width="1280" height="720" color="0x07060FFF" />
+    <Poster id="backdrop" translation="[380,0]" width="900" height="506" loadDisplayMode="scaleToZoom" loadWidth="1350" loadHeight="759" opacity="0.55" />
+    <Poster id="heroFade" uri="pkg:/images/hero_fade.png" translation="[380,0]" width="900" height="506" />
+    <Rectangle id="shade" color="0x07060F60" width="1280" height="720" />
+    <Label id="name" translation="[40,28]" width="1200" height="44" color="0xF3F1FAFF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Bold.ttf" size="30" />
+    </Label>
+    <Poster id="cover" translation="[40,90]" width="220" height="330" loadDisplayMode="scaleToZoom" loadWidth="330" loadHeight="495" />
+    <Poster id="coverCorners" uri="pkg:/images/card_round.9.png" translation="[40,90]" width="220" height="330" />
+    <Label id="meta" translation="[40,430]" width="240" height="50" wrap="true" font="font:SmallSystemFont" color="0xB4AECBFF" />
+    <Label id="plot" translation="[40,484]" width="240" height="170" wrap="true" maxLines="8" font="font:SmallSystemFont" color="0xF3F1FAFF" />
+    <LabelList id="seasonList" translation="[300,100]" itemSize="[230,44]" numRows="10" focusBitmapUri="pkg:/images/focus.9.png" color="0xE6E2F2FF" focusedColor="0xFFFFFFFF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Medium.ttf" size="16" />
+      <Font role="focusedFont" uri="pkg:/fonts/Poppins-Bold.ttf" size="16" />
+    </LabelList>
+    <LabelList id="episodeList" translation="[550,100]" itemSize="[690,44]" numRows="10" focusBitmapUri="pkg:/images/focus.9.png" color="0xE6E2F2FF" focusedColor="0xFFFFFFFF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Medium.ttf" size="16" />
+      <Font role="focusedFont" uri="pkg:/fonts/Poppins-Bold.ttf" size="16" />
+    </LabelList>
+    <Label id="status" translation="[300,280]" width="940" height="120" horizAlign="center" wrap="true" font="font:MediumSystemFont" color="0xF3F1FAFF" />
+    <Label id="idTag" translation="[300,556]" width="940" height="26" font="font:SmallSystemFont" color="0x8E88A8FF" />
+    <Label id="hint" translation="[40,672]" width="1200" height="30" font="font:SmallSystemFont" color="0xB4AECBFF" text="OK: ver episodio      Play/Pausa: agregar o quitar de favoritos" />
+  </children>
+</component>

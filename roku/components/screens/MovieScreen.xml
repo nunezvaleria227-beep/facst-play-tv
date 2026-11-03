@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="MovieScreen" extends="Group">
+  <interface>
+    <field id="item" type="assocarray" onChange="onItem" />
+    <field id="event" type="assocarray" alwaysNotify="true" />
+    <function name="focusScreen" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/screens/MovieScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <children>
+    <Rectangle id="base" width="1280" height="720" color="0x07060FFF" />
+    <Poster id="backdrop" translation="[380,0]" width="900" height="506" loadDisplayMode="scaleToZoom" loadWidth="1350" loadHeight="759" />
+    <Poster id="heroFade" uri="pkg:/images/hero_fade.png" translation="[380,0]" width="900" height="506" />
+    <Poster id="cover" translation="[60,92]" width="220" height="330" loadDisplayMode="scaleToZoom" loadWidth="330" loadHeight="495" />
+    <Poster id="coverCorners" uri="pkg:/images/card_round.9.png" translation="[60,92]" width="220" height="330" />
+    <Label id="name" translation="[316,84]" width="880" height="104" wrap="true" maxLines="2" lineSpacing="-6" color="0xF3F1FAFF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Bold.ttf" size="36" />
+    </Label>
+    <Label id="meta" translation="[316,192]" width="880" height="26" color="0xB4AECBFF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Medium.ttf" size="15" />
+    </Label>
+    <Label id="plot" translation="[316,226]" width="700" height="140" wrap="true" maxLines="5" lineSpacing="2" color="0xD6D1E8FF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Regular.ttf" size="16" />
+    </Label>
+    <Label id="extra" translation="[316,372]" width="760" height="54" wrap="true" maxLines="2" color="0x8E88A8FF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Regular.ttf" size="13" />
+    </Label>
+    <LabelList id="actions" translation="[316,444]" itemSize="[330,50]" itemSpacing="[0,8]" numRows="4" focusBitmapUri="pkg:/images/focus.9.png" color="0xE6E2F2FF" focusedColor="0xFFFFFFFF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Medium.ttf" size="17" />
+      <Font role="focusedFont" uri="pkg:/fonts/Poppins-Bold.ttf" size="17" />
+    </LabelList>
+    <Label id="status" translation="[316,400]" width="880" height="40" color="0xB4AECBFF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Medium.ttf" size="14" />
+    </Label>
+    <Label id="idTag" translation="[60,676]" width="820" height="26" color="0x4A4560FF">
+      <Font role="font" uri="pkg:/fonts/Poppins-Regular.ttf" size="12" />
+    </Label>
+  </children>
+</component>

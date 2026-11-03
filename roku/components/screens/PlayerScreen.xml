@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="PlayerScreen" extends="Group">
+  <interface>
+    <field id="params" type="assocarray" onChange="onParams" />
+    <field id="event" type="assocarray" alwaysNotify="true" />
+    <function name="focusScreen" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/screens/PlayerScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <children>
+    <Rectangle color="0x000000FF" width="1280" height="720" />
+    <Video id="video" translation="[0,0]" width="1280" height="720" />
+    <Group id="banner" translation="[0,0]" visible="false">
+      <Rectangle width="1280" height="118" color="0x000000B8" />
+      <Label id="bannerTitle" translation="[40,12]" width="880" height="40" font="font:MediumBoldSystemFont" color="0xFFFFFFFF" />
+      <Label id="bannerId" translation="[930,22]" width="310" height="26" horizAlign="right" font="font:SmallSystemFont" color="0x8E88A8FF" />
+      <Label id="bannerNow" translation="[40,56]" width="1200" height="28" font="font:SmallSystemFont" color="0xE6E2F2FF" />
+      <Label id="bannerNext" translation="[40,84]" width="1200" height="28" font="font:SmallSystemFont" color="0xB4AECBFF" />
+    </Group>
+    <Group id="notice" translation="[0,0]" visible="false">
+      <Rectangle translation="[440,628]" width="400" height="46" color="0x000000C8" />
+      <Label id="noticeText" translation="[440,628]" width="400" height="46" horizAlign="center" vertAlign="center" font="font:SmallBoldSystemFont" color="0xFFFFFFFF" />
+    </Group>
+    <Timer id="bannerTimer" duration="6" repeat="false" />
+    <Timer id="saveTimer" duration="15" repeat="true" />
+    <Timer id="watchTimer" duration="2" repeat="true" />
+    <Timer id="retryTimer" duration="2" repeat="false" />
+    <Timer id="zapTimer" duration="0.35" repeat="false" />
+  </children>
+</component>

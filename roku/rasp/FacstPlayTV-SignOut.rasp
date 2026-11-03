@@ -1,0 +1,12 @@
+params:
+    rasp_version: 1
+    default_keypress_wait: 2
+    channels:
+        Facst Play TV: dev
+steps:
+    - launch: Facst Play TV
+    - pause: 8
+    - press: info
+    - pause: 2
+    - press: ok
+    - pause: 3
