@@ -124,9 +124,13 @@ fun HomeScreen(vm: AppViewModel) {
     }
 
     val channels = vm.live.visibleItems
-    val byId = remember(channels) { channels.associateBy { it.id } }
+    // El índice por id ya viene hecho con la lista (armarlo aquí con miles de canales trababa el inicio).
+    val byId = vm.live.catalog?.byId
     val recentIds = vm.library?.recentLive?.ids.orEmpty()
-    val recent = remember(recentIds, byId) { recentIds.mapNotNull { byId[it] } }
+    val hidden = vm.parental.locked
+    val recent = remember(recentIds, byId, hidden) {
+        recentIds.mapNotNull { byId?.get(it) }.filter { !vm.live.isBlocked(it.categoryId) }
+    }
     val suggested = if (recent.isNotEmpty()) recent else channels.take(6)
     var heroChannel by remember { mutableStateOf<LiveChannel?>(null) }
     val hero = heroChannel ?: suggested.firstOrNull()
@@ -146,10 +150,9 @@ fun HomeScreen(vm: AppViewModel) {
     // Sin sonido en Inicio: el sonido sale al abrir el canal en pantalla completa.
     LaunchedEffect(preview.player) { preview.player?.volume = 0f }
 
-    val movies = vm.movies.visibleItems
-    val seriesItems = vm.series.visibleItems
-    val newMovies = remember(movies) { movies.sortedByDescending { it.added }.take(24) }
-    val newSeries = remember(seriesItems) { seriesItems.sortedByDescending { it.added }.take(24) }
+    // Ya vienen calculadas al cargar cada lista (sin ordenar decenas de miles de títulos en pantalla).
+    val newMovies = vm.movies.newestVisible
+    val newSeries = vm.series.newestVisible
     val resume = vm.resumeEntries
 
     LaunchedEffect(Unit) {
@@ -634,7 +637,7 @@ private fun ContinueRow(entries: List<ResumeEntry>, onPlay: (ResumeEntry) -> Uni
             contentPadding = PaddingValues(horizontal = 40.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(entries, key = { it.key }) { entry ->
+            items(entries.distinctBy { it.key }, key = { it.key }) { entry ->
                 FocusCard(
                     onClick = { onPlay(entry) },
                     modifier = Modifier.width(176.dp),
@@ -698,7 +701,7 @@ private fun PosterRow(title: String, tiles: List<Tile>) {
             contentPadding = PaddingValues(horizontal = 40.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(tiles, key = { it.key }) { tile ->
+            items(tiles.distinctBy { it.key }, key = { it.key }) { tile ->
                 PosterCard(
                     title = tile.title,
                     imageUrl = tile.image,

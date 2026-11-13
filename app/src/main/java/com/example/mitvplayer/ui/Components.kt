@@ -185,7 +185,7 @@ const val LOGO_RATIO = 919f / 470f
 @Composable
 fun AppLogo(modifier: Modifier = Modifier) {
     Image(
-        painter = painterResource(R.drawable.logo_app),
+        bitmap = rememberArt(R.drawable.logo_app),
         contentDescription = stringResource(R.string.app_name),
         contentScale = ContentScale.Fit,
         modifier = modifier.aspectRatio(LOGO_RATIO)

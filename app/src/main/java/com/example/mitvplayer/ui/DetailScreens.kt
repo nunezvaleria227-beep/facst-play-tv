@@ -52,6 +52,7 @@ import coil.compose.AsyncImage
 import com.example.mitvplayer.data.Episode
 import com.example.mitvplayer.data.Kind
 import com.example.mitvplayer.data.Movie
+import com.example.mitvplayer.data.parseRating
 import com.example.mitvplayer.data.MovieInfo
 import com.example.mitvplayer.data.ResumeEntry
 import com.example.mitvplayer.data.SeriesDetail
@@ -125,7 +126,7 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
         details?.releaseDate?.take(4),
         details?.duration,
         details?.genre,
-        movie.rating?.takeIf { (it.toFloatOrNull() ?: 0f) > 0f }?.let { "★ $it" }
+        movie.rating?.takeIf { parseRating(it) > 0f }?.let { "★ $it" }
     ).joinToString("   •   ")
 
     AppBackground {
@@ -266,7 +267,7 @@ fun SeriesDetailScreen(vm: AppViewModel, show: SeriesItem) {
     val meta = listOfNotNull(
         detail?.releaseDate?.take(4),
         detail?.genre,
-        show.rating?.takeIf { (it.toFloatOrNull() ?: 0f) > 0f }?.let { "★ $it" }
+        show.rating?.takeIf { parseRating(it) > 0f }?.let { "★ $it" }
     ).joinToString("  •  ")
 
     AppBackground {
