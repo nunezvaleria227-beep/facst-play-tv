@@ -242,6 +242,7 @@ class PlayerActivity : ComponentActivity() {
             .setReadTimeoutMs(20_000)
 
         val exo = ExoPlayer.Builder(this)
+            .setLoadControl(com.example.mitvplayer.FastStart.loadControl())
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, dataSourceFactory)))
             .build()
         exo.addListener(listener)
