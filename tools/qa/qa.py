@@ -257,17 +257,26 @@ def open_section(key, shot_name=None):
 
 
 def move_inside(key, take_shots=False):
-    """Con el control: cambia de categoría varias veces y luego baja rápido por la lista o cuadrícula."""
+    """Con el control: cambia de categoría (En vivo) o de fila (Películas, Series) varias veces y luego baja rápido."""
     t0 = now_dev()
-    # El foco empieza en la lista de categorías: bajar y elegir varias.
-    for _ in range(6):
-        keys(DOWN, DOWN, OK, wait=0.35)
+    if key == "live":
+        # El foco empieza en la lista de canales: ▲ a las categorías y ▶ por varias (cambian solas, sin OK).
+        keys(UP, wait=0.5)
+        for _ in range(6):
+            keys(RIGHT, wait=0.45)
+        label = "cambiar categorías"
+    else:
+        # El foco empieza en la primera tarjeta: ▼ pasa de fila (la fila sube arriba) y ▶ recorre la fila.
+        for _ in range(6):
+            keys(DOWN, wait=0.35)
+        keys(*([RIGHT] * 8), wait=0.3)
+        label = "pasar de fila y recorrerla"
     if take_shots:
         shot(f"{key}_otra_categoria")
     t1 = now_dev()
     lag_cat = lags_between(t0, t1 + 400)
-    # Al contenido y bajar rápido.
-    keys(RIGHT, wait=0.4)
+    if key == "live":
+        keys(DOWN, wait=0.6)
     keys(*([DOWN] * 30), wait=0.2)
     keys(*([RIGHT] * 3), wait=0.2)
     keys(*([DOWN] * 30), wait=0.8)
@@ -275,7 +284,7 @@ def move_inside(key, take_shots=False):
         shot(f"{key}_bajando")
     t2 = now_dev()
     lag_scroll = lags_between(t1, t2 + 400)
-    for label, lags in (("cambiar categorías", lag_cat), ("bajar por la lista", lag_scroll)):
+    for label, lags in ((label, lag_cat), ("bajar rápido", lag_scroll)):
         worst = max((l[1] for l in lags), default=0)
         total = sum(l[1] for l in lags)
         RESULTS["moves"].append({"seccion": key, "accion": label, "trabones": len(lags), "peor_ms": worst, "total_ms": total})
@@ -367,6 +376,86 @@ def wait_catalogs():
     shot("inicio_con_listas")
 
 
+@step("inicio estilo streaming y menú lateral")
+def home_rows():
+    qa_open("Movies")
+    time.sleep(2)
+    keys(BACK, wait=2.5)  # de vuelta al Inicio: el foco cae en «Ver ahora»
+    shot("inicio_portada")
+    on_home = texts(dump(quiet=True))
+    marks = [m for m in APP.get("home_markers", []) if any(m.lower() in t.lower() for t in on_home)]
+    log("OK" if marks else "FALLO", "Inicio con portada grande: " + " | ".join(on_home[:10])[:260])
+    t0 = now_dev()
+    keys(DOWN, wait=1.2)
+    shot("inicio_primera_fila")
+    keys(DOWN, wait=0.9)
+    keys(DOWN, wait=2.2)
+    shot("inicio_estrenos")
+    keys(RIGHT, RIGHT, RIGHT, wait=2.2)
+    shot("inicio_portada_cambia")
+    log("INFO", "Portada al recorrer la fila: " + " | ".join(texts(dump(quiet=True))[:8])[:260])
+    lags = lags_between(t0, now_dev())
+    worst = max((l[1] for l in lags), default=0)
+    log("OK" if worst <= 400 else "LENTO", f"Moverse por las filas del Inicio: {len(lags)} trabones, peor {worst} ms")
+    report_lags("filas del Inicio", lags, 2)
+    # ◀ hasta salir de la fila: entra al menú lateral, que se abre con los nombres.
+    keys(*([LEFT] * 6), wait=1.2)
+    shot("menu_lateral")
+    nav = texts(dump(quiet=True))
+    wanted = ["Inicio", "En vivo", "Películas", "Series", "Guía"]
+    missing = [w for w in wanted if not any(w.lower() == t.lower() for t in nav)]
+    log("OK" if not missing else "FALLO", "Menú lateral abierto con " + ", ".join(w for w in wanted if w not in missing) +
+        (f"; faltan {missing}" if missing else ""))
+    # En el menú: ▼ a «En vivo» y OK.
+    t0 = now_dev()
+    keys(DOWN, wait=0.5)
+    keys(OK, wait=0.2)
+    t, _ = wait_qa(r"^NAV Live", t0, timeout=20)
+    log("OK" if t else "FALLO", f"Desde el menú lateral, En vivo {'abrió en ' + str(t - t0) + ' ms' if t else 'no abrió'}")
+    time.sleep(3)
+    shot("menu_a_en_vivo")
+    # ◀ al menú otra vez y a Películas (cambia de sección sin apilar pantallas).
+    keys(*([LEFT] * 3), wait=0.8)
+    t0 = now_dev()
+    keys(DOWN, wait=0.4)
+    keys(OK, wait=0.2)
+    t, _ = wait_qa(r"^NAV Movies", t0, timeout=20)
+    log("OK" if t else "FALLO", f"Del menú a Películas {'en ' + str(t - t0) + ' ms' if t else ': no abrió'}")
+    time.sleep(2.5)
+    shot("menu_a_peliculas")
+    t0 = now_dev()
+    keys(BACK, wait=0.2)
+    t, _ = wait_qa(r"^NAV Home", t0, timeout=10)
+    log("OK" if t else "FALLO", "Atrás desde una sección del menú vuelve al Inicio" if t else
+        "Atrás desde una sección del menú NO volvió al Inicio")
+    time.sleep(1.5)
+
+
+@step("Ver todo de una fila")
+def see_all():
+    if not open_section("movies"):
+        return
+    keys(*([RIGHT] * 25), wait=0.4)
+    keys(*([RIGHT] * 25), wait=1.0)
+    shot("fila_final_ver_todo")
+    t0 = now_dev()
+    keys(OK, wait=0.2)
+    t, _ = wait_qa(r"^NAV Grid", t0, timeout=20)
+    time.sleep(3)
+    shot("ver_todo_cuadricula")
+    log("OK" if t else "FALLO", f"«Ver todo» {'abrió la lista completa en ' + str(t - t0) + ' ms' if t else 'no abrió'}; en pantalla: " +
+        " | ".join(texts(dump(quiet=True))[:8])[:220])
+    keys(DOWN, DOWN, RIGHT, wait=0.8)
+    shot("ver_todo_moviendo")
+    t0 = now_dev()
+    keys(BACK, wait=0.2)
+    t, _ = wait_qa(r"^NAV Movies", t0, timeout=10)
+    time.sleep(2)
+    shot("ver_todo_regreso")
+    log("OK" if t else "FALLO", "Atrás de «Ver todo» vuelve a las filas de Películas" if t else "Atrás de «Ver todo» no volvió")
+    keys(BACK, wait=1.0)
+
+
 @step("cambiar de sección varias veces")
 def sections():
     for r in range(3):
@@ -422,15 +511,54 @@ def series_detail():
 def live_channel():
     if not open_section("live"):
         return
-    keys(RIGHT, wait=0.5)
-    keys(DOWN, DOWN, wait=0.4)
-    keys(OK, wait=7)
+    keys(DOWN, DOWN, wait=4.5)  # quedarse en un canal: se ve solo en la vista previa
     shot("vivo_vista_previa")
+    log("INFO", "En vivo con vista previa: " + " | ".join(texts(dump(quiet=True))[:12])[:300])
+    keys(UP, UP, UP, wait=0.6)  # a las categorías
+    keys(RIGHT, RIGHT, wait=1.5)
+    shot("vivo_categorias")
+    keys(DOWN, wait=0.6)
+    keys(DOWN, wait=4.0)
     keys(OK, wait=7)
     shot("vivo_pantalla_completa")
-    log("INFO", "Al pulsar OK dos veces en un canal: " + top_activity()[-70:])
-    keys(BACK, wait=1.5)
+    top = top_activity()
+    log("OK" if "PlayerActivity" in top else "FALLO", "OK en un canal lo abre en pantalla completa: " + top[-70:])
+    keys(BACK, wait=2.5)
+    shot("vivo_al_volver")
     keys(BACK, wait=1.0)
+
+
+@step("pausa en vivo, regresar, número de canal y opciones")
+def live_extras():
+    if not open_section("live"):
+        return
+    keys(DOWN, wait=0.6)
+    keys(OK, wait=8)
+    if "PlayerActivity" not in top_activity():
+        log("FALLO", "No se abrió el canal en pantalla completa: " + top_activity()[-70:])
+        return
+    keys(85, wait=9)  # ⏯ pausa: el canal se sigue guardando
+    shot("vivo_en_pausa")
+    log("INFO", "En pausa: " + " | ".join(texts(dump(quiet=True))[:6])[:220])
+    keys(OK, wait=7)  # sigue desde donde se pausó
+    shot("vivo_atrasado")
+    log("INFO", "Al seguir: " + " | ".join(texts(dump(quiet=True))[:6])[:220])
+    keys(LEFT, wait=4)  # regresa 10 s
+    shot("vivo_regresar_10s")
+    keys(BACK, wait=7)  # vuelve al vivo
+    shot("vivo_de_nuevo")
+    still = "PlayerActivity" in top_activity()
+    log("OK" if still else "FALLO", "Atrás con la pausa puesta vuelve al vivo (sin salir del reproductor)" if still
+        else "Atrás con la pausa puesta cerró el reproductor")
+    keys(9, 10, wait=5)  # teclea "23": va al canal 23
+    shot("vivo_canal_23")
+    log("INFO", "Después de teclear 23: " + " | ".join(texts(dump(quiet=True))[:6])[:220])
+    keys(82, wait=2)  # ≡ opciones
+    shot("vivo_opciones")
+    log("INFO", "Opciones: " + " | ".join(texts(dump(quiet=True))[:10])[:300])
+    keys(BACK, wait=1)
+    log("OK" if app_alive() else "FALLO", "Pausa, regresar, volver al vivo, número de canal y opciones sin cierres")
+    keys(BACK, wait=1.5)
     keys(BACK, wait=1.0)
 
 
@@ -520,10 +648,13 @@ def main():
     if login():
         early_movies()
         wait_catalogs()
+        home_rows()
         sections()
+        see_all()
         movie_detail()
         series_detail()
         live_channel()
+        live_extras()
         search()
         settings()
         reopen()

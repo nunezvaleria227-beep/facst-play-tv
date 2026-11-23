@@ -16,6 +16,7 @@ import com.example.mitvplayer.data.IdList
 import com.example.mitvplayer.data.Item
 import com.example.mitvplayer.data.Kind
 import com.example.mitvplayer.data.Repository
+import com.example.mitvplayer.data.isKidsCategoryName
 import com.example.mitvplayer.data.searchKey
 import com.example.mitvplayer.data.userMessage
 import kotlinx.coroutines.CancellationException
@@ -64,7 +65,11 @@ class BrowseState<T : Item>(
     private val recents: () -> IdList?,
     private val categoryFilter: ((Category) -> Boolean)? = null,
     /** Verdadero mientras hay que esconder lo de adultos (control parental). Puede leer estado de Compose. */
-    private val hideAdult: (() -> Boolean)? = null
+    private val hideAdult: (() -> Boolean)? = null,
+    /** Verdadero con el perfil Niños puesto: solo se ve lo de las categorías infantiles. Puede leer estado de Compose. */
+    private val kidsOnly: (() -> Boolean)? = null,
+    /** ¿Esta categoría entra en el perfil Niños? */
+    private val kidsAllows: ((Category) -> Boolean)? = null
 ) {
     var catalog by mutableStateOf<Catalog<T>?>(null)
         private set
@@ -104,17 +109,60 @@ class BrowseState<T : Item>(
 
     // ------------------------------------------------------------- lo que se muestra
 
-    /** Identificadores de las categorías escondidas por el control parental. */
+    /** Perfil Niños puesto: categorías que se ven (null = perfil normal). */
+    private val kidsIds: Set<String>? by derivedStateOf {
+        val cat = catalog
+        if (cat == null || kidsOnly?.invoke() != true) {
+            null
+        } else {
+            val allows = kidsAllows
+            cat.categories.asSequence()
+                .filter { it.id !in cat.adultCategoryIds && (allows?.invoke(it) ?: isKidsCategoryName(it.name)) }
+                .mapTo(HashSet()) { it.id }
+        }
+    }
+
+    /** Perfil Niños: todo lo de sus categorías, sin repetidos. */
+    private val kidsItems: List<T> by derivedStateOf {
+        val cat = catalog
+        val ids = kidsIds
+        if (cat == null || ids == null) {
+            emptyList()
+        } else {
+            val seen = HashSet<String>()
+            val out = ArrayList<T>()
+            for (category in cat.categories) {
+                if (category.id !in ids) continue
+                for (item in cat.byCategory[category.id].orEmpty()) if (seen.add(item.id)) out.add(item)
+            }
+            out
+        }
+    }
+
+    private val kidsItemIds: Set<String> by derivedStateOf { kidsItems.mapTo(HashSet()) { it.id } }
+
+    /** Identificadores de las categorías escondidas (control parental o perfil Niños). */
     private val blockedIds: Set<String> by derivedStateOf {
         val cat = catalog
-        if (cat == null || hideAdult?.invoke() != true) emptySet() else cat.adultCategoryIds
+        val kids = kidsIds
+        when {
+            cat == null -> emptySet()
+            kids != null -> cat.categories.asSequence().map { it.id }.filterTo(HashSet()) { it !in kids }
+            hideAdult?.invoke() != true -> emptySet()
+            else -> cat.adultCategoryIds
+        }
     }
+
+    /** ¿Este elemento está escondido ahora (control parental o perfil Niños)? */
+    private fun hiddenItem(item: T): Boolean =
+        if (kidsIds != null) item.id !in kidsItemIds else item.categoryId in blockedIds
 
     /** Todo lo de la sección sin lo escondido (para el buscador, la guía y los conteos). */
     val visibleItems: List<T> by derivedStateOf {
         val cat = catalog
         when {
             cat == null -> emptyList()
+            kidsIds != null -> kidsItems
             blockedIds.isEmpty() -> cat.items
             else -> cat.itemsWithoutAdult
         }
@@ -189,15 +237,13 @@ class BrowseState<T : Item>(
     /** Para el inicio: lo más nuevo, sin lo escondido. */
     val newestVisible: List<T> by derivedStateOf {
         val cat = catalog ?: return@derivedStateOf emptyList()
-        val hide = blockedIds
-        cat.newest.asSequence().filter { it.categoryId !in hide }.take(HOME_LIMIT).toList()
+        cat.newest.asSequence().filter { !hiddenItem(it) }.take(HOME_LIMIT).toList()
     }
 
     /** Para el inicio: lo mejor calificado (7 o más), sin lo escondido. */
     val topRatedVisible: List<T> by derivedStateOf {
         val cat = catalog ?: return@derivedStateOf emptyList()
-        val hide = blockedIds
-        cat.topRated.asSequence().filter { it.rating10 >= 7f && it.categoryId !in hide }.take(HOME_LIMIT).toList()
+        cat.topRated.asSequence().filter { it.rating10 >= 7f && !hiddenItem(it) }.take(HOME_LIMIT).toList()
     }
 
     init {
@@ -212,13 +258,16 @@ class BrowseState<T : Item>(
         }
     }
 
-    /** ¿Esta categoría está escondida por el control parental? */
-    fun isBlocked(categoryId: String): Boolean = categoryId.isNotEmpty() && categoryId in blockedIds
+    /** ¿Esta categoría está escondida (control parental o perfil Niños)? */
+    fun isBlocked(categoryId: String): Boolean {
+        val kids = kidsIds
+        return if (kids != null) categoryId !in kids else categoryId.isNotEmpty() && categoryId in blockedIds
+    }
 
     /** Si la categoría elegida quedó escondida (se bloqueó de nuevo), vuelve a TODO. */
     fun ensureSelectionVisible() {
         if (selectedId.startsWith("__")) return
-        if (selectedId in blockedIds) select(ROW_ALL)
+        if (isBlocked(selectedId)) select(ROW_ALL)
     }
 
     val selectedName: String
@@ -240,22 +289,15 @@ class BrowseState<T : Item>(
         ROW_ALL -> pool
         ROW_FAV -> favoriteItems(cat)
         ROW_RECENT -> recentItems(cat)
-        ROW_ADDED -> {
-            val hide = blockedIds
-            cat.newest.asSequence().filter { it.categoryId !in hide }.take(ADDED_LIMIT).toList()
-        }
+        ROW_ADDED -> cat.newest.asSequence().filter { !hiddenItem(it) }.take(ADDED_LIMIT).toList()
         else -> if (id in allowedIds) cat.byCategory[id].orEmpty() else emptyList()
     }
 
-    private fun favoriteItems(cat: Catalog<T>): List<T> {
-        val hide = blockedIds
-        return favorites()?.ids.orEmpty().mapNotNull { cat.byId[it] }.filter { it.categoryId !in hide }
-    }
+    private fun favoriteItems(cat: Catalog<T>): List<T> =
+        favorites()?.ids.orEmpty().mapNotNull { cat.byId[it] }.filter { !hiddenItem(it) }
 
-    private fun recentItems(cat: Catalog<T>): List<T> {
-        val hide = blockedIds
-        return recents()?.ids.orEmpty().mapNotNull { cat.byId[it] }.filter { it.categoryId !in hide }
-    }
+    private fun recentItems(cat: Catalog<T>): List<T> =
+        recents()?.ids.orEmpty().mapNotNull { cat.byId[it] }.filter { !hiddenItem(it) }
 
     private fun sorted(list: List<T>, mode: SortMode): List<T> = when (mode) {
         SortMode.DEFAULT -> list

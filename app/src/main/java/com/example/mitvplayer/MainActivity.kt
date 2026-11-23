@@ -22,10 +22,13 @@ import com.example.mitvplayer.ui.EpgCategoriesScreen
 import com.example.mitvplayer.ui.EpgChannelsScreen
 import com.example.mitvplayer.ui.EpgGridScreen
 import com.example.mitvplayer.ui.HomeScreen
+import com.example.mitvplayer.ui.KidsCategoriesScreen
 import com.example.mitvplayer.ui.LiveScreen
 import com.example.mitvplayer.ui.LoginScreen
 import com.example.mitvplayer.ui.MiTvTheme
 import com.example.mitvplayer.ui.MovieDetailScreen
+import com.example.mitvplayer.ui.MoviesScreen
+import com.example.mitvplayer.ui.SeriesScreen
 import com.example.mitvplayer.ui.MultiScreen
 import com.example.mitvplayer.ui.NotificationsScreen
 import com.example.mitvplayer.ui.PosterGridScreen
@@ -61,9 +64,27 @@ class MainActivity : ComponentActivity() {
         MainActivityQa(viewModel, intent?.getStringExtra("qa_open"))
     }
 
+    /**
+     * Si la app se cerró sola la vez anterior, se le avisa al dueño al celular en segundo plano (FailureReport).
+     * El cliente no ve nada ni tiene que mandar fotos. Si no hay internet, se intenta la próxima vez que se abra.
+     */
+    private fun reportLastCrash() {
+        val app = applicationContext
+        val details = CrashLog.read(app) ?: return
+        Thread({
+            val user = try {
+                (app as MiTvApp).repository.savedCredentials()?.username
+            } catch (e: Exception) {
+                null
+            }
+            if (FailureReport.crashBlocking(app, details, user)) CrashLog.clear(app)
+        }, "aviso-cierre").start()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Config.QA_BUILD) qaOpen(intent)
+        reportLastCrash()
         setContent {
             MiTvTheme {
                 Surface(
@@ -72,7 +93,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                     AppRoot(viewModel)
                     com.example.mitvplayer.ui.TvKeyboardHost()
-                    LastCrashNotice()
                 }
             }
         }
@@ -92,20 +112,6 @@ private fun MainActivityQa(vm: AppViewModel, name: String?) {
     vm.qaOpen(screen)
 }
 
-/** Si la app se cerró sola la vez anterior, muestra el motivo una vez (para mandarlo en foto). */
-@Composable
-private fun LastCrashNotice() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var text by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(CrashLog.read(context)) }
-    val shown = text ?: return
-    com.example.mitvplayer.ui.OptionsDialog(
-        title = "La app se cerró la última vez",
-        message = "Toma una foto de este mensaje y mándala a soporte:\n\n$shown",
-        options = listOf(com.example.mitvplayer.ui.Opt("Entendido") { CrashLog.clear(context); text = null }),
-        onDismiss = { CrashLog.clear(context); text = null }
-    )
-}
-
 @Composable
 private fun AppRoot(vm: AppViewModel) {
     // Atrás en cualquier pantalla abierta regresa a la anterior; en el inicio o el login cierra la app.
@@ -123,26 +129,31 @@ private fun AppRoot(vm: AppViewModel) {
         Screen.Home -> HomeScreen(vm)
         Screen.Live -> LiveScreen(vm, vm.live, title = "TV en vivo")
         Screen.Radio -> LiveScreen(vm, vm.radio, title = "Radio", radio = true)
-        Screen.Movies -> PosterGridScreen(
-            vm = vm,
-            state = vm.movies,
-            kind = Kind.MOVIES,
-            searchScope = SearchScope.MOVIES,
-            noun = "películas",
-            art = R.drawable.art_movies,
-            posterOf = { it.poster },
-            onOpen = { vm.openMovie(it) }
-        )
-        Screen.SeriesList -> PosterGridScreen(
-            vm = vm,
-            state = vm.series,
-            kind = Kind.SERIES,
-            searchScope = SearchScope.SERIES,
-            noun = "series",
-            art = R.drawable.art_series,
-            posterOf = { it.cover },
-            onOpen = { vm.openSeries(it) }
-        )
+        Screen.Movies -> MoviesScreen(vm)
+        Screen.SeriesList -> SeriesScreen(vm)
+        is Screen.Grid -> if (top.kind == Kind.SERIES) {
+            PosterGridScreen(
+                vm = vm,
+                state = vm.series,
+                kind = Kind.SERIES,
+                searchScope = SearchScope.SERIES,
+                noun = "series",
+                art = R.drawable.art_series,
+                posterOf = { it.cover },
+                onOpen = { vm.openSeries(it) }
+            )
+        } else {
+            PosterGridScreen(
+                vm = vm,
+                state = vm.movies,
+                kind = Kind.MOVIES,
+                searchScope = SearchScope.MOVIES,
+                noun = "películas",
+                art = R.drawable.art_movies,
+                posterOf = { it.poster },
+                onOpen = { vm.openMovie(it) }
+            )
+        }
         is Screen.MovieDetails -> MovieDetailScreen(vm, top.movie)
         is Screen.SeriesDetails -> SeriesDetailScreen(vm, top.series)
         Screen.Epg -> EpgCategoriesScreen(vm)
@@ -158,5 +169,6 @@ private fun AppRoot(vm: AppViewModel) {
         Screen.Settings -> SettingsScreen(vm)
         Screen.Recordings -> RecordingsScreen(vm)
         Screen.Continue -> ContinueScreen(vm)
+        Screen.KidsCategories -> KidsCategoriesScreen(vm)
     }
 }

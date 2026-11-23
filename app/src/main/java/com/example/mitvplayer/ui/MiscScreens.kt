@@ -146,6 +146,13 @@ fun NotificationsScreen(vm: AppViewModel) {
 
     SimplePage(vm, "Avisos") {
         var any = false
+        vm.notices.forEach { notice ->
+            any = true
+            Card {
+                Text(notice.title, color = AccentColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(notice.message, color = TextPrimary)
+            }
+        }
         if (!message.isNullOrBlank()) {
             any = true
             Card {
@@ -244,6 +251,18 @@ fun SettingsScreen(vm: AppViewModel) {
         )
         Spacer(Modifier.height(4.dp))
         ParentalSettings(vm, onFlow = { pinFlow = it })
+        if (!vm.kids.active) {
+            TvButton(
+                text = "Perfil Niños: elegir categorías",
+                onClick = { vm.open(Screen.KidsCategories) },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "El perfil Niños (botón Perfil del inicio) muestra solo categorías infantiles. Se eligen solas; aquí puedes agregar o quitar.",
+                color = TextSecondary,
+                fontSize = 12.sp
+            )
+        }
         Spacer(Modifier.height(4.dp))
         val subLangName = when (subLang) {
             "es" -> "Español"

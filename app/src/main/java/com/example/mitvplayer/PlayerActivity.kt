@@ -46,6 +46,8 @@ import com.example.mitvplayer.data.SubtitleFiles
 import com.example.mitvplayer.data.SubtitleQuery
 import com.example.mitvplayer.data.SubtitleService
 import com.example.mitvplayer.data.SubtitleSettings
+import com.example.mitvplayer.data.LiveChannel
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -73,7 +75,9 @@ data class PlayItem(
     /** true = empezar desde el principio aunque haya un minuto guardado. */
     val fromStart: Boolean = false,
     /** Datos para buscar sus subtítulos en internet (películas y episodios). */
-    val subs: SubtitleQuery? = null
+    val subs: SubtitleQuery? = null,
+    /** Número del canal (para cambiar de canal tecleándolo con el control). Solo en vivo; 0 = sin número. */
+    val number: Int = 0
 )
 
 /** Lista que se le entrega al reproductor justo antes de abrirlo. */
@@ -83,12 +87,17 @@ object PlaybackQueue {
 
     @Volatile
     var startIndex: Int = 0
+
+    /** Todos los canales que se pueden ver (para ir a un canal por su número aunque no esté en la lista abierta). */
+    @Volatile
+    var directory: List<LiveChannel> = emptyList()
 }
 
 /**
  * Reproductor a pantalla completa (Media3 / ExoPlayer).
  *
- * En vivo:   ▲ / CH+ = canal siguiente, ▼ / CH- = canal anterior, OK = información del canal.
+ * En vivo:   ▲ / CH+ = canal siguiente, ▼ / CH- = canal anterior, OK = información del canal,
+ *            0-9 = ir a un canal por su número, ⏯ = pausar (se sigue guardando el canal), ≡ = opciones.
  * Películas y series: controles estándar de Media3; al terminar un episodio sigue con el siguiente.
  */
 @OptIn(UnstableApi::class)
@@ -104,6 +113,24 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var optionsBar: View
     private lateinit var btnSubtitles: TextView
     private lateinit var btnSize: TextView
+    private lateinit var statusText: TextView
+    private lateinit var numberText: TextView
+
+    /** Pausa de la TV en vivo: lo que se está guardando del canal (null = viendo en vivo normal). */
+    private var timeshift: LiveTimeshift? = null
+
+    /** true = se está viendo lo guardado (atrasado respecto al vivo); false = en pausa esperando. */
+    private var timeshiftPlaying = false
+
+    /** Número de canal que se va tecleando. */
+    private val typedNumber = StringBuilder()
+
+    /** El canal que se veía antes (para la tecla "canal anterior"). */
+    private var previousLive: PlayItem? = null
+
+    /** Cuánto se retrasa el audio en lo que se está viendo (sincronizar audio). */
+    @Volatile
+    private var audioDelayUs = 0L
 
     /** En vivo: con ◀ ▶ se marca el botón "Tamaño" (sin depender del foco, que no funciona en modo táctil); OK lo abre. */
     private var sizeMarked = false
@@ -163,6 +190,13 @@ class PlayerActivity : ComponentActivity() {
         }
     }
     private val retryTask = Runnable { retryPlayback() }
+    private val numberTask = Runnable { commitNumber() }
+    private val statusTask = object : Runnable {
+        override fun run() {
+            updateTimeshiftStatus()
+            if (timeshift != null) handler.postDelayed(this, 1_000L)
+        }
+    }
     private val saveTask = object : Runnable {
         override fun run() {
             saveProgress()
@@ -215,6 +249,13 @@ class PlayerActivity : ComponentActivity() {
         optionsBar = findViewById(R.id.options_bar)
         btnSubtitles = findViewById(R.id.btn_subtitles)
         btnSize = findViewById(R.id.btn_size)
+        statusText = findViewById(R.id.status_text)
+        numberText = findViewById(R.id.number_text)
+        // Al pausar la TV en vivo se suelta la conexión: la última imagen se queda en pantalla.
+        playerView.setKeepContentOnPlayerReset(true)
+        // Lo que haya quedado de una pausa anterior (por ejemplo, si se cerró la app) se borra.
+        val leftovers = File(cacheDir, PAUSE_DIR).listFiles().orEmpty()
+        if (leftovers.isNotEmpty()) Thread({ leftovers.forEach { it.deleteRecursively() } }, "pausa-limpiar").start()
 
         btnSubtitles.setOnClickListener { showSubtitleDialog() }
         btnSize.setOnClickListener { showSizeDialog() }
@@ -241,7 +282,7 @@ class PlayerActivity : ComponentActivity() {
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(20_000)
 
-        val exo = ExoPlayer.Builder(this, AudioSupport.renderersFactory(this))
+        val exo = ExoPlayer.Builder(this, AudioSupport.renderersFactory(this) { audioDelayUs })
             .setLoadControl(com.example.mitvplayer.FastStart.loadControl())
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, dataSourceFactory)))
             .build()
@@ -271,6 +312,7 @@ class PlayerActivity : ComponentActivity() {
         handler.removeCallbacksAndMessages(null)
         epgJob?.cancel()
         if (!::playerView.isInitialized || items.isEmpty()) return
+        stopTimeshift()
 
         saveProgress()
         val exo = player
@@ -300,6 +342,8 @@ class PlayerActivity : ComponentActivity() {
         val exo = player ?: return
         val item = items[index]
 
+        stopTimeshift()
+        audioDelayUs = PlayerSync.audioMs(this, item) * 1_000L
         handler.removeCallbacks(retryTask)
         retryCount = 0
         errorText.visibility = View.GONE
@@ -338,7 +382,11 @@ class PlayerActivity : ComponentActivity() {
 
     private fun onEnded() {
         val item = items[index]
-        if (item.isLive) return
+        if (item.isLive) {
+            // Se terminó lo guardado de la pausa (se llenó el espacio o se cortó): se vuelve al vivo.
+            if (timeshift != null) goLive()
+            return
+        }
         saveProgress(finished = true)
         if (index < items.lastIndex) {
             index++
@@ -353,11 +401,203 @@ class PlayerActivity : ComponentActivity() {
             showBanner(items[index])
             return
         }
-        index = (index + delta + items.size) % items.size
+        switchTo((index + delta + items.size) % items.size)
+    }
+
+    /** Cambia al canal [newIndex] de la lista, recordando el de ahora como "canal anterior". */
+    private fun switchTo(newIndex: Int) {
+        val current = items.getOrNull(index)
+        if (current != null && current.isLive && newIndex != index) previousLive = current
+        index = newIndex
         playCurrent()
     }
 
+    // ------------------------------------------------- canal por número / anterior
+
+    private fun typeDigit(digit: Int) {
+        if (typedNumber.length >= 4) typedNumber.clear()
+        typedNumber.append(digit)
+        numberText.text = typedNumber.toString()
+        numberText.visibility = View.VISIBLE
+        handler.removeCallbacks(numberTask)
+        handler.postDelayed(numberTask, NUMBER_WAIT_MS)
+    }
+
+    private fun clearNumber() {
+        handler.removeCallbacks(numberTask)
+        typedNumber.clear()
+        numberText.visibility = View.GONE
+    }
+
+    private fun commitNumber() {
+        val number = typedNumber.toString().toIntOrNull()
+        clearNumber()
+        if (number == null || number <= 0) return
+        val inList = items.indexOfFirst { it.isLive && it.number == number }
+        if (inList >= 0) {
+            if (inList != index) switchTo(inList) else showBanner(items[index])
+            return
+        }
+        // No está en la lista que se abrió (por ejemplo, una categoría): se usa la lista de todos los canales.
+        val all = PlaybackQueue.directory
+        val target = all.indexOfFirst { it.number == number }
+        if (target < 0) {
+            Toast.makeText(this, "No hay canal $number", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val repo = (application as MiTvApp).repository
+        val current = items.getOrNull(index)
+        if (current != null && current.isLive) previousLive = current
+        items = all.map { liveItemFor(it, repo.liveUrl(it.id)) }
+        index = target
+        repo.library?.recentLive?.touch(all[target].id)
+        playCurrent()
+    }
+
+    /** Vuelve al canal que se veía antes. */
+    private fun goPrevious() {
+        val previous = previousLive
+        if (previous == null) {
+            Toast.makeText(this, "Todavía no hay canal anterior", Toast.LENGTH_SHORT).show()
+            return
+        }
+        var target = items.indexOfFirst { it.isLive && it.streamId == previous.streamId }
+        if (target < 0) {
+            items = items + previous
+            target = items.lastIndex
+        }
+        switchTo(target)
+    }
+
+    // ------------------------------------------------------ pausa de la TV en vivo
+
+    /** ⏯ en vivo: pausa (y se empieza a guardar el canal) o sigue desde donde se pausó. */
+    private fun togglePauseLive() {
+        val exo = player ?: return
+        val ts = timeshift
+        when {
+            ts == null -> startPause()
+            !timeshiftPlaying -> resumeTimeshift()
+            else -> exo.playWhenReady = !exo.playWhenReady
+        }
+        updateTimeshiftStatus()
+    }
+
+    private fun startPause() {
+        val exo = player ?: return
+        val item = items[index]
+        if (!item.isLive) return
+        handler.removeCallbacks(retryTask)
+        errorText.visibility = View.GONE
+        // El reproductor suelta su conexión y la toma la grabación de la pausa: así se usa una sola conexión.
+        exo.playWhenReady = false
+        exo.stop()
+        val ts = LiveTimeshift(
+            File(File(cacheDir, PAUSE_DIR), android.os.SystemClock.elapsedRealtime().toString()),
+            exo.currentMediaItem?.localConfiguration?.uri?.toString() ?: item.url,
+            Config.USER_AGENT
+        )
+        timeshift = ts
+        timeshiftPlaying = false
+        ts.start()
+        banner.visibility = View.GONE
+        handler.removeCallbacks(statusTask)
+        handler.post(statusTask)
+    }
+
+    /** Sigue viendo desde donde se pausó, leyendo lo guardado. */
+    private fun resumeTimeshift() {
+        val exo = player ?: return
+        val ts = timeshift ?: return
+        if (ts.segmentCount == 0) {
+            if (ts.finished) {
+                // No se pudo guardar nada (canal que no se deja guardar, sin espacio o sin conexión): al vivo.
+                goLive()
+                return
+            }
+            // Todavía se está guardando el primer pedacito: se espera un momento.
+            statusText.text = "⏳  Preparando…"
+            statusText.visibility = View.VISIBLE
+            handler.postDelayed({ if (timeshift === ts && !timeshiftPlaying) resumeTimeshift() }, 500L)
+            return
+        }
+        timeshiftPlaying = true
+        val media = MediaItem.Builder()
+            .setUri(Uri.fromFile(ts.playlistFile))
+            .setMimeType(MimeTypes.APPLICATION_M3U8)
+            .setLiveConfiguration(
+                MediaItem.LiveConfiguration.Builder().setMinPlaybackSpeed(1f).setMaxPlaybackSpeed(1f).build()
+            )
+            .build()
+        exo.setMediaItem(media, 0L)
+        exo.prepare()
+        exo.playWhenReady = true
+        updateTimeshiftStatus()
+    }
+
+    /** Regresa o adelanta dentro de lo guardado. Adelantar hasta el final vuelve al vivo. */
+    private fun seekTimeshift(deltaMs: Long) {
+        val exo = player ?: return
+        val ts = timeshift ?: return
+        if (!timeshiftPlaying) {
+            resumeTimeshift()
+            return
+        }
+        val savedMs = (ts.savedSeconds * 1000).toLong()
+        val target = (exo.currentPosition + deltaMs).coerceAtLeast(0L)
+        if (deltaMs > 0 && target >= savedMs - LIVE_EDGE_MS) {
+            goLive()
+            return
+        }
+        exo.seekTo(target)
+        exo.playWhenReady = true
+        updateTimeshiftStatus()
+    }
+
+    /** Deja lo guardado y vuelve a ver el canal en vivo. */
+    private fun goLive() {
+        stopTimeshift()
+        playCurrent()
+        Toast.makeText(this, "En vivo", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopTimeshift() {
+        val ts = timeshift ?: return
+        timeshift = null
+        timeshiftPlaying = false
+        ts.stop()
+        handler.removeCallbacks(statusTask)
+        if (::statusText.isInitialized) statusText.visibility = View.GONE
+    }
+
+    private fun updateTimeshiftStatus() {
+        val ts = timeshift
+        val exo = player
+        if (ts == null || exo == null) {
+            statusText.visibility = View.GONE
+            return
+        }
+        val saved = ts.savedSeconds
+        statusText.text = when {
+            !timeshiftPlaying && ts.unsupported ->
+                "⏸  En pausa · este canal no se puede guardar (OK: volver al vivo)"
+            !timeshiftPlaying ->
+                "⏸  En pausa · guardando ${formatPosition((saved * 1000).toLong())} · OK para seguir"
+            else -> {
+                val behindMs = ((saved * 1000).toLong() - exo.currentPosition).coerceAtLeast(0L)
+                val paused = if (!exo.playWhenReady) "⏸  " else ""
+                "$paused⏪  Atrasado ${formatPosition(behindMs)} · ◀ ▶ 10 s · Atrás: en vivo"
+            }
+        }
+        statusText.visibility = View.VISIBLE
+    }
+
     private fun handleError(error: PlaybackException) {
+        // Falló lo guardado de la pausa: se vuelve al vivo.
+        if (timeshift != null) {
+            goLive()
+            return
+        }
         // El decodificador de audio del aparato no pudo con este canal: se vuelve a abrir leyendo el audio con FFmpeg.
         if (AudioSupport.switchToSoftware(error)) {
             handler.removeCallbacks(retryTask)
@@ -381,11 +621,32 @@ class PlayerActivity : ComponentActivity() {
         errorText.text = "No se pudo reproducir este contenido ($detail).\n\n" +
             "Pulsa OK para reintentar o Atrás para salir."
         errorText.visibility = View.VISIBLE
+        // Se le avisa al dueño de la app (sin contraseña ni dirección completa).
+        items.getOrNull(index)?.let { item ->
+            val repo = (application as MiTvApp).repository
+            FailureReport.playback(
+                this,
+                what = item.title,
+                kind = when {
+                    item.isLive -> "En vivo"
+                    item.resume?.type == "episode" -> "Serie"
+                    item.resume?.type == "movie" -> "Película"
+                    else -> "Video"
+                },
+                detail = detail,
+                server = Uri.parse(item.url).host,
+                user = repo.account?.username
+            )
+        }
     }
 
     private fun retryPlayback() {
         val exo = player ?: return
         handler.removeCallbacks(retryTask)
+        if (timeshift != null) {
+            goLive()
+            return
+        }
         if (items[index].isLive) exo.seekToDefaultPosition()
         exo.prepare()
         exo.playWhenReady = true
@@ -465,29 +726,113 @@ class PlayerActivity : ComponentActivity() {
 
     private fun showOptionsMenu() {
         val item = items.getOrNull(index) ?: return
-        val withAudio = audioChoices().size > 1
-        if (item.isLive && !withAudio) {
-            showSizeDialog()
-            return
-        }
         val labels = ArrayList<String>()
         val actions = ArrayList<() -> Unit>()
-        if (!item.isLive) {
-            labels += "Subtítulos"
-            actions += { showSubtitleDialog() }
+        fun add(label: String, action: () -> Unit) {
+            labels += label
+            actions += action
         }
-        if (withAudio) {
-            labels += "Audio (idioma)"
-            actions += { showAudioDialog() }
+        if (item.isLive) {
+            if (timeshift == null) add("⏸  Pausar (se sigue guardando el canal)") { togglePauseLive() }
+            else add("●  Volver al vivo") { goLive() }
+            if (previousLive != null) add("Canal anterior") { goPrevious() }
+        } else {
+            add("Subtítulos") { showSubtitleDialog() }
+            val key = item.subs?.cacheKey
+            if (key != null && SubtitleFiles.saved(this, key).isNotEmpty()) {
+                add("Sincronizar subtítulos de internet") { showSubtitleSyncDialog() }
+            }
         }
-        labels += "Tamaño de la imagen"
-        actions += { showSizeDialog() }
+        if (audioChoices().size > 1) add("Audio (idioma)") { showAudioDialog() }
+        add("Sincronizar audio (voz e imagen)") { showAudioSyncDialog() }
+        add("Tamaño de la imagen") { showSizeDialog() }
         AlertDialog.Builder(this)
             .setTitle("Opciones")
             .setItems(labels.toTypedArray()) { _, which -> actions[which]() }
             .setOnDismissListener { playerView.requestFocus() }
             .show()
     }
+
+    // ---------------------------------------------------------- sincronizar
+
+    /** La voz no va con la imagen: se retrasa o adelanta el audio (se recuerda para este canal o video). */
+    private fun showAudioSyncDialog() {
+        val item = items.getOrNull(index) ?: return
+        val values = (-AUDIO_SYNC_MAX_MS..AUDIO_SYNC_MAX_MS step AUDIO_SYNC_STEP_MS).toList()
+        val current = PlayerSync.audioMs(this, item)
+        val labels = values.map { ms ->
+            when {
+                ms == 0 -> "Sin ajuste"
+                ms < 0 -> "Adelantar el audio ${seconds(-ms)} (la voz llega tarde)"
+                else -> "Retrasar el audio ${seconds(ms)} (la voz llega antes)"
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Sincronizar audio")
+            .setSingleChoiceItems(labels.toTypedArray(), values.indexOf(current).coerceAtLeast(0)) { dialog, which ->
+                dialog.dismiss()
+                val ms = values[which]
+                PlayerSync.setAudioMs(this, item, ms)
+                audioDelayUs = ms * 1_000L
+                // Se vuelve a cargar desde el mismo punto para que el ajuste se note de inmediato.
+                player?.let { exo ->
+                    if (timeshift == null && item.isLive) {
+                        exo.seekToDefaultPosition()
+                        exo.prepare()
+                    } else {
+                        exo.seekTo(exo.currentPosition)
+                    }
+                }
+            }
+            .setOnDismissListener { playerView.requestFocus() }
+            .show()
+    }
+
+    /** Los subtítulos bajados de internet salen antes o después de tiempo: se corren (se recuerda para este video). */
+    private fun showSubtitleSyncDialog() {
+        val item = items.getOrNull(index) ?: return
+        val key = item.subs?.cacheKey ?: return
+        val values = (-SUB_SYNC_MAX_MS..SUB_SYNC_MAX_MS step SUB_SYNC_STEP_MS).toList()
+        val current = PlayerSync.subtitleMs(this, key)
+        val labels = values.map { ms ->
+            when {
+                ms == 0 -> "Sin ajuste"
+                ms < 0 -> "Que salgan ${seconds(-ms)} antes"
+                else -> "Que salgan ${seconds(ms)} después"
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Sincronizar subtítulos")
+            .setSingleChoiceItems(labels.toTypedArray(), values.indexOf(current).coerceAtLeast(0)) { dialog, which ->
+                dialog.dismiss()
+                PlayerSync.setSubtitleMs(this, key, values[which])
+                reloadKeepingSubtitle()
+            }
+            .setOnDismissListener { playerView.requestFocus() }
+            .show()
+    }
+
+    /** Vuelve a cargar el video en el mismo minuto (con los subtítulos corridos) y deja el mismo idioma de subtítulos. */
+    private fun reloadKeepingSubtitle() {
+        val exo = player ?: return
+        val item = items.getOrNull(index) ?: return
+        val lang = textChoices().firstOrNull { it.selected }?.lang ?: SubtitleSettings.language(this).takeIf { it != "off" }
+        val position = exo.currentPosition
+        val wasPlaying = exo.playWhenReady
+        if (lang != null) {
+            exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setPreferredTextLanguage(lang)
+                .build()
+        }
+        exo.setMediaItem(buildMediaItem(item), position)
+        exo.prepare()
+        exo.playWhenReady = wasPlaying
+    }
+
+    private fun seconds(ms: Int): String =
+        if (ms % 1000 == 0) "${ms / 1000} s" else String.format(Locale.US, "%.1f s", ms / 1000.0)
 
     private fun optionsFocused(): Boolean =
         ::btnSize.isInitialized && (btnSize.hasFocus() || btnSubtitles.hasFocus())
@@ -601,8 +946,11 @@ class PlayerActivity : ComponentActivity() {
         val builder = MediaItem.Builder().setUri(item.url)
         val key = item.subs?.cacheKey
         if (!item.isLive && key != null) {
+            // Si se sincronizaron, se usa una copia con los tiempos corridos.
+            val shift = PlayerSync.subtitleMs(this, key)
             val configs = SubtitleFiles.saved(this, key).map { (lang, file) ->
-                MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
+                val source = if (shift != 0) PlayerSync.shiftedSubtitle(this, file, shift) else file
+                MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(source))
                     .setMimeType(MimeTypes.APPLICATION_SUBRIP)
                     .setLanguage(lang)
                     .setLabel("${languageDisplay(lang)} (internet)")
@@ -794,6 +1142,60 @@ class PlayerActivity : ComponentActivity() {
             val isOk = key == KeyEvent.KEYCODE_DPAD_CENTER ||
                 key == KeyEvent.KEYCODE_ENTER ||
                 key == KeyEvent.KEYCODE_NUMPAD_ENTER
+            val live = items[index].isLive
+
+            // En vivo: los números del control van a ese canal (OK lo confirma de inmediato; Atrás lo borra).
+            if (live) {
+                val digit = when (key) {
+                    in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> key - KeyEvent.KEYCODE_0
+                    in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> key - KeyEvent.KEYCODE_NUMPAD_0
+                    else -> -1
+                }
+                if (digit >= 0) {
+                    if (event.repeatCount == 0) typeDigit(digit)
+                    return true
+                }
+                if (typedNumber.isNotEmpty()) {
+                    if (isOk) {
+                        if (event.repeatCount == 0) commitNumber()
+                        return true
+                    }
+                    if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_DEL) {
+                        clearNumber()
+                        return true
+                    }
+                }
+                if (key == KeyEvent.KEYCODE_LAST_CHANNEL) {
+                    if (event.repeatCount == 0) goPrevious()
+                    return true
+                }
+            }
+
+            // Pausa de la TV en vivo: ⏯ pausa / sigue, ◀ ▶ y ⏪ ⏩ regresan o adelantan 10 s, Atrás vuelve al vivo.
+            if (live && timeshift != null && !optionsFocused()) {
+                val firstPress = event.repeatCount == 0
+                when (key) {
+                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
+                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                        if (firstPress) {
+                            if (timeshift?.unsupported == true && !timeshiftPlaying) goLive() else togglePauseLive()
+                        }
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                        seekTimeshift(-SEEK_STEP_MS)
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                        seekTimeshift(SEEK_STEP_MS)
+                        return true
+                    }
+                    KeyEvent.KEYCODE_BACK -> {
+                        if (firstPress) goLive()
+                        return true
+                    }
+                }
+            }
 
             // Teclas de opciones: Menú (≡) abre Subtítulos / Audio / Tamaño; la tecla CC abre los subtítulos.
             if (key == KeyEvent.KEYCODE_MENU) {
@@ -862,8 +1264,14 @@ class PlayerActivity : ComponentActivity() {
                         }
                         return true
                     }
-                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                        player?.let { it.playWhenReady = !it.playWhenReady }
+                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                        if (firstPress) togglePauseLive()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                        if (firstPress) {
+                            Toast.makeText(this, "Pausa primero (⏯) para poder regresar", Toast.LENGTH_SHORT).show()
+                        }
                         return true
                     }
                 }
@@ -896,7 +1304,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         if (item.isLive) {
-            hintText.text = "▲ ▼  Cambiar de canal      OK  Información      ◀ ▶  Tamaño      Atrás  Salir"
+            hintText.text = "▲ ▼  Canal     0-9  Número     OK  Información     ⏯  Pausa     ◀ ▶  Tamaño     ≡  Opciones"
             hintText.visibility = View.VISIBLE
         } else {
             hintText.visibility = View.GONE
@@ -949,6 +1357,14 @@ class PlayerActivity : ComponentActivity() {
         private const val MAX_AUTO_RETRIES = 3
         private const val BANNER_DURATION_MS = 5_000L
         private const val SAVE_EVERY_MS = 15_000L
+        private const val NUMBER_WAIT_MS = 1_800L
+        private const val SEEK_STEP_MS = 10_000L
+        private const val LIVE_EDGE_MS = 4_000L
+        private const val PAUSE_DIR = "pausa"
+        private const val AUDIO_SYNC_MAX_MS = 2_000
+        private const val AUDIO_SYNC_STEP_MS = 100
+        private const val SUB_SYNC_MAX_MS = 10_000
+        private const val SUB_SYNC_STEP_MS = 500
 
         fun start(context: Context, items: List<PlayItem>, startIndex: Int) {
             PlaybackQueue.items = items

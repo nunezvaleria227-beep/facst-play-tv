@@ -19,6 +19,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.mitvplayer.Config
 import com.example.mitvplayer.MiTvApp
 import com.example.mitvplayer.PlayItem
+import com.example.mitvplayer.PlaybackQueue
+import com.example.mitvplayer.liveItemFor
+import com.example.mitvplayer.data.AppNotice
+import com.example.mitvplayer.data.AppNotices
+import com.example.mitvplayer.data.KidsProfile
 import com.example.mitvplayer.PlayerActivity
 import com.example.mitvplayer.ResumeTag
 import com.example.mitvplayer.RecordingManager
@@ -82,6 +87,9 @@ sealed interface Screen {
     data object Recordings : Screen
     data object Continue : Screen
     data class EpgGrid(val categoryId: String, val title: String) : Screen
+    data object KidsCategories : Screen
+    /** Lista completa de una fila de Películas o Series ("Ver todo"). */
+    data class Grid(val kind: Kind) : Screen
 }
 
 /** Estado de la búsqueda de versiones nuevas. */
@@ -102,6 +110,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Control parental: PIN y bloqueo de las categorías para adultos. */
     val parental = ParentalControl(application)
+
+    /** Perfil Niños: solo categorías infantiles; para salir hace falta el PIN. */
+    val kids = KidsProfile(application)
 
     // -------------------------------------------------------------- navegación
 
@@ -202,7 +213,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         fetch = { force, progress -> repo.liveCatalog(force, progress) },
         favorites = { repo.library?.favLive },
         recents = { repo.library?.recentLive },
-        hideAdult = { parental.locked }
+        hideAdult = { parental.locked },
+        kidsOnly = { kids.active },
+        kidsAllows = { kids.allows(Kind.LIVE, it) }
     )
 
     /** La radio son las categorías de En vivo cuyo nombre dice "radio". */
@@ -213,7 +226,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         favorites = { repo.library?.favLive },
         recents = { repo.library?.recentLive },
         categoryFilter = { it.name.contains("radio", ignoreCase = true) },
-        hideAdult = { parental.locked }
+        hideAdult = { parental.locked },
+        kidsOnly = { kids.active },
+        kidsAllows = { kids.allows(Kind.LIVE, it) }
     )
 
     val movies = BrowseState<Movie>(
@@ -222,7 +237,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         fetch = { force, progress -> repo.movieCatalog(force, progress) },
         favorites = { repo.library?.favMovies },
         recents = { repo.library?.recentMovies },
-        hideAdult = { parental.locked }
+        hideAdult = { parental.locked },
+        kidsOnly = { kids.active },
+        kidsAllows = { kids.allows(Kind.MOVIES, it) }
     )
 
     val series = BrowseState<SeriesItem>(
@@ -231,7 +248,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         fetch = { force, progress -> repo.seriesCatalog(force, progress) },
         favorites = { repo.library?.favSeries },
         recents = { repo.library?.recentSeries },
-        hideAdult = { parental.locked }
+        hideAdult = { parental.locked },
+        kidsOnly = { kids.active },
+        kidsAllows = { kids.allows(Kind.SERIES, it) }
     )
 
     // ----------------------------------------------------------- pantalla múltiple
@@ -307,6 +326,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 stack = listOf(Screen.Home)
                 preload()
                 checkForUpdate()
+                loadNotices()
                 return
             } catch (e: CancellationException) {
                 throw e
@@ -333,6 +353,44 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ----------------------------------------------------------- perfil Niños
+
+    /** Pone o quita el perfil Niños (quitarlo pide el PIN antes, en la pantalla). */
+    fun setKidsMode(on: Boolean) {
+        kids.turn(on)
+        if (on) parental.lock()
+        live.ensureSelectionVisible()
+        radio.ensureSelectionVisible()
+        movies.ensureSelectionVisible()
+        series.ensureSelectionVisible()
+    }
+
+    // ------------------------------------------------- avisos de Facst Play TV
+
+    /** Avisos vigentes que publica el dueño de la app (docs/avisos.json en GitHub). */
+    var notices by mutableStateOf<List<AppNotice>>(emptyList())
+        private set
+
+    /** Aviso que se muestra al abrir la app (el primero que aún no se ha visto). */
+    var noticeToShow by mutableStateOf<AppNotice?>(null)
+        private set
+
+    fun loadNotices() {
+        if (Config.QA_BUILD) return
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val list = AppNotices.fetch()
+            notices = list
+            noticeToShow = list.firstOrNull { it.always || !AppNotices.seen(app, it.id) }
+        }
+    }
+
+    fun dismissNotice() {
+        val shown = noticeToShow ?: return
+        AppNotices.markSeen(getApplication(), shown.id)
+        noticeToShow = null
+    }
+
     /** Vuelve a esconder el contenido para adultos. */
     fun lockParental() {
         parental.lock()
@@ -356,6 +414,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         radio.reset()
         movies.reset()
         series.reset()
+        homeRows.reset()
+        movieRows.reset()
+        seriesRows.reset()
+        liveFocusId = null
         multiLayout = null
         multiChannels.clear()
         multiActive = 0
@@ -366,6 +428,111 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun open(screen: Screen) {
         com.example.mitvplayer.QaProbe.opened(screen.qaName())
         stack = stack + screen
+    }
+
+    /**
+     * Cambia de sección desde el menú lateral: queda el Inicio y encima solo esa sección (no se van apilando
+     * pantallas), así Atrás desde cualquier sección vuelve al Inicio.
+     */
+    fun go(screen: Screen) {
+        if (stack.firstOrNull() != Screen.Home) return
+        if (stack.last() == screen) return
+        com.example.mitvplayer.QaProbe.opened(screen.qaName())
+        stack = if (screen == Screen.Home) listOf(Screen.Home) else listOf(Screen.Home, screen)
+    }
+
+    /** "Ver todo" de una fila de Películas o Series: la lista completa de esa categoría en cuadrícula. */
+    fun openGrid(kind: Kind, rowId: String) {
+        val state = if (kind == Kind.MOVIES) movies else series
+        state.select(rowId)
+        state.sidebarOpen = false
+        // El foco entra directo al primer póster de la lista.
+        state.restoring = true
+        open(Screen.Grid(kind))
+    }
+
+    // ------------------------------------------------- dónde estaba el foco
+
+    /** Filas de Inicio, Películas y Series: dónde estaba el foco (para volver ahí). */
+    val homeRows = RowsMemory()
+    val movieRows = RowsMemory()
+    val seriesRows = RowsMemory()
+
+    /** Último canal enfocado en TV en vivo. */
+    var liveFocusId: String? = null
+
+    // ---------------------------------------- datos de la portada (con caché)
+
+    private val heroCache = object : LinkedHashMap<String, HeroDetails>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, HeroDetails>?): Boolean = size > 300
+    }
+    private val movieInfoCache = object : LinkedHashMap<String, MovieInfo>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MovieInfo>?): Boolean = size > 200
+    }
+    private val seriesCache = object : LinkedHashMap<String, SeriesDetail>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, SeriesDetail>?): Boolean = size > 60
+    }
+
+    fun cachedHeroDetails(key: String): HeroDetails? = synchronized(heroCache) { heroCache[key] }
+
+    /** Imagen de fondo, de qué trata y datos del título de la portada (null si no se pudo). */
+    suspend fun loadHeroDetails(hero: HeroItem): HeroDetails? {
+        val movie = hero.movie
+        val show = hero.series
+        val channel = hero.channel
+        val details = when {
+            movie != null -> loadMovieInfo(movie)?.let { info ->
+                HeroDetails(
+                    backdrop = info.backdrop,
+                    plot = info.plot?.takeIf { it.isNotBlank() },
+                    meta = listOfNotNull(
+                        info.releaseDate?.take(4)?.takeIf { it.isNotBlank() },
+                        info.genre?.takeIf { it.isNotBlank() },
+                        info.duration?.takeIf { it.isNotBlank() && it != "00:00:00" }
+                    ).joinToString("  ·  ")
+                )
+            }
+            show != null -> try {
+                cachedSeriesDetail(show)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }?.let { d ->
+                HeroDetails(
+                    backdrop = d.backdrop,
+                    plot = d.plot?.takeIf { it.isNotBlank() },
+                    meta = listOfNotNull(
+                        d.releaseDate?.take(4)?.takeIf { it.isNotBlank() },
+                        d.genre?.takeIf { it.isNotBlank() },
+                        d.seasons.size.takeIf { it > 0 }?.let { if (it == 1) "1 temporada" else "$it temporadas" }
+                    ).joinToString("  ·  ")
+                )
+            }
+            channel != null -> {
+                val nowSec = System.currentTimeMillis() / 1000
+                val epg = epgFor(channel.id)
+                val current = epg.firstOrNull { it.start <= nowSec && nowSec < it.end && !it.placeholder }
+                val next = epg.firstOrNull { it.start >= (current?.end ?: nowSec) && !it.placeholder }
+                // La guía cambia con la hora: no se guarda en la caché.
+                return HeroDetails(
+                    backdrop = null,
+                    plot = current?.description?.takeIf { it.isNotBlank() }
+                        ?: next?.let { "Después: ${formatHm(it.start)}  ${it.title}" },
+                    meta = current?.let { "Ahora: ${it.title}  (${formatHm(it.start)} – ${formatHm(it.end)})" }.orEmpty()
+                )
+            }
+            else -> null
+        } ?: return null
+        synchronized(heroCache) { heroCache[hero.key] = details }
+        return details
+    }
+
+    suspend fun cachedSeriesDetail(item: SeriesItem): SeriesDetail {
+        synchronized(seriesCache) { seriesCache[item.id] }?.let { return it }
+        val detail = repo.seriesDetail(item.id)
+        synchronized(seriesCache) { seriesCache[item.id] = detail }
+        return detail
     }
 
     fun openMovie(movie: Movie, restoreFocus: Boolean = true) {
@@ -432,16 +599,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // ----------------------------------------------------------------- detalles
 
-    suspend fun loadMovieInfo(movie: Movie): MovieInfo? =
-        try {
-            repo.movieInfo(movie.id)
+    suspend fun loadMovieInfo(movie: Movie): MovieInfo? {
+        synchronized(movieInfoCache) { movieInfoCache[movie.id] }?.let { return it }
+        return try {
+            repo.movieInfo(movie.id).also { info -> synchronized(movieInfoCache) { movieInfoCache[movie.id] = info } }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             null
         }
+    }
 
-    suspend fun loadSeriesDetail(item: SeriesItem): SeriesDetail = repo.seriesDetail(item.id)
+    suspend fun loadSeriesDetail(item: SeriesItem): SeriesDetail = cachedSeriesDetail(item)
 
     // ---------------------------------------------------------------------- guía
 
@@ -476,15 +645,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playLive(context: Context, channels: List<LiveChannel>, index: Int) {
         channels.getOrNull(index)?.let { markWatched(it) }
-        val playItems = channels.map { channel ->
-            PlayItem(
-                title = if (channel.number > 0) "${channel.number}  ${channel.name}" else channel.name,
-                subtitle = null,
-                url = repo.liveUrl(channel.id),
-                isLive = true,
-                streamId = channel.id
-            )
-        }
+        val playItems = channels.map { channel -> liveItemFor(channel, repo.liveUrl(channel.id)) }
+        // Para ir a un canal por su número aunque no esté en esta lista (respeta el control parental y el perfil Niños).
+        PlaybackQueue.directory = live.visibleItems
         PlayerActivity.start(context, playItems, index)
     }
 

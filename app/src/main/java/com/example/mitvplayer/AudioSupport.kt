@@ -15,8 +15,10 @@ import androidx.media3.exoplayer.RenderersFactory
 import androidx.media3.exoplayer.audio.AudioRendererEventListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import java.nio.ByteBuffer
 
 /**
  * Sonido en todos los canales.
@@ -68,8 +70,13 @@ object AudioSupport {
         }
     }
 
-    /** Para ExoPlayer.Builder(context, AudioSupport.renderersFactory(context)). El video no cambia. */
-    fun renderersFactory(context: Context): RenderersFactory = Factory(context.applicationContext)
+    /**
+     * Para ExoPlayer.Builder(context, AudioSupport.renderersFactory(context)). El video no cambia.
+     * [audioDelayUs] = cuánto se retrasa el audio respecto a la imagen (negativo = se adelanta), para los canales
+     * donde la voz no va con la imagen. Se lee en cada pedazo de audio, así que se puede cambiar en cualquier momento.
+     */
+    fun renderersFactory(context: Context, audioDelayUs: () -> Long = { 0L }): RenderersFactory =
+        Factory(context.applicationContext, audioDelayUs)
 
     /**
      * Si el error vino del decodificador de audio del aparato, pasa a leer el audio con FFmpeg.
@@ -86,7 +93,7 @@ object AudioSupport {
         return true
     }
 
-    private class Factory(context: Context) : DefaultRenderersFactory(context) {
+    private class Factory(context: Context, private val audioDelayUs: () -> Long) : DefaultRenderersFactory(context) {
 
         /**
          * Sin passthrough: el audio sale siempre como sonido normal (PCM), que acepta cualquier tele o barra.
@@ -97,10 +104,13 @@ object AudioSupport {
             context: Context,
             enableFloatOutput: Boolean,
             enableAudioTrackPlaybackParams: Boolean
-        ): AudioSink = DefaultAudioSink.Builder()
-            .setEnableFloatOutput(enableFloatOutput)
-            .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-            .build()
+        ): AudioSink = DelayedAudioSink(
+            DefaultAudioSink.Builder()
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .build(),
+            audioDelayUs
+        )
 
         /** Primero el decodificador del aparato y, para lo que no sepa leer, FFmpeg. */
         override fun buildAudioRenderers(
@@ -125,5 +135,14 @@ object AudioSupport {
             )
             out.add(FfmpegAudioRenderer(eventHandler, eventListener, audioSink))
         }
+    }
+
+    /**
+     * Sincronizar el audio: corre los tiempos del audio. El reproductor sigue el reloj del audio, así que con
+     * tiempos corridos +X el sonido sale X más tarde que la imagen (y con -X, antes).
+     */
+    private class DelayedAudioSink(sink: AudioSink, private val delayUs: () -> Long) : ForwardingAudioSink(sink) {
+        override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean =
+            super.handleBuffer(buffer, presentationTimeUs + delayUs(), encodedAccessUnitCount)
     }
 }
