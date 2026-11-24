@@ -437,8 +437,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun go(screen: Screen) {
         if (stack.firstOrNull() != Screen.Home) return
         if (stack.last() == screen) return
+        startFromTop(screen)
         com.example.mitvplayer.QaProbe.opened(screen.qaName())
         stack = if (screen == Screen.Home) listOf(Screen.Home) else listOf(Screen.Home, screen)
+    }
+
+    /**
+     * Al entrar a una sección desde el menú se empieza desde arriba (al volver de una ficha o del reproductor,
+     * en cambio, el foco regresa a donde estaba). En vivo sí recuerda el último canal.
+     */
+    private fun startFromTop(screen: Screen) {
+        when (screen) {
+            Screen.Home -> homeRows.reset()
+            Screen.Movies -> movieRows.reset()
+            Screen.SeriesList -> seriesRows.reset()
+            else -> Unit
+        }
     }
 
     /** "Ver todo" de una fila de Películas o Series: la lista completa de esa categoría en cuadrícula. */
@@ -552,6 +566,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Prueba automática: vuelve al inicio y abre la pantalla pedida (solo si ya hay sesión). */
     fun qaOpen(screen: Screen) {
         if (stack.firstOrNull() != Screen.Home) return
+        startFromTop(screen)
         stack = listOf(Screen.Home)
         open(screen)
     }

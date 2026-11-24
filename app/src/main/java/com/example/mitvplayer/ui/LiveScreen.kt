@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -34,6 +35,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -608,18 +611,31 @@ private fun LiveInfoPanel(
             )
         }
         Spacer(Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // ▲ desde los botones no se va al menú; ▶ en el último no baja a las categorías.
+        fun Modifier.edge(last: Boolean): Modifier = focusProperties {
+            up = FocusRequester.Cancel
+            if (last) right = FocusRequester.Cancel
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState())
+        ) {
             if (channel != null) {
-                HeroButton("▶  Pantalla completa", onFullscreen, primary = true)
+                HeroButton("▶  Pantalla completa", onFullscreen, Modifier.edge(last = false), primary = true, compact = true)
                 val favorite = remember(favTick, channel.id) { vm.isFavorite(Kind.LIVE, channel.id) }
-                HeroButton(if (favorite) "★  Favorito" else "☆  Favorito", {
-                    vm.toggleFavorite(Kind.LIVE, channel.id)
-                    favTick++
-                })
+                HeroButton(
+                    if (favorite) "★  Favorito" else "☆  Favorito",
+                    {
+                        vm.toggleFavorite(Kind.LIVE, channel.id)
+                        favTick++
+                    },
+                    Modifier.edge(last = false),
+                    compact = true
+                )
             }
-            HeroButton("▦  Guía completa", onGuide)
+            HeroButton("▦  Guía", onGuide, Modifier.edge(last = recording == null), compact = true)
             if (recording != null) {
-                HeroButton("■  Detener grabación", { RecordingManager.stop() })
+                HeroButton("■  Detener grabación", { RecordingManager.stop() }, Modifier.edge(last = true), compact = true)
             }
         }
     }
@@ -651,6 +667,8 @@ private fun CategoryChips(state: BrowseState<LiveChannel>, requester: FocusReque
             val shape = RoundedCornerShape(50)
             Row(
                 modifier = Modifier
+                    // En la última categoría, ▶ no se sale a los botones de arriba.
+                    .then(if (index == rows.size - 1) Modifier.focusProperties { right = FocusRequester.Cancel } else Modifier)
                     .then(if (index == selectedIndex) Modifier.focusRequester(requester) else Modifier)
                     .onFocusChanged {
                         focusedChip = it.isFocused

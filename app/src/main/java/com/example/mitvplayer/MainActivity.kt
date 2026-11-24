@@ -31,7 +31,7 @@ import com.example.mitvplayer.ui.MoviesScreen
 import com.example.mitvplayer.ui.SeriesScreen
 import com.example.mitvplayer.ui.MultiScreen
 import com.example.mitvplayer.ui.NotificationsScreen
-import com.example.mitvplayer.ui.PosterGridScreen
+import com.example.mitvplayer.ui.SeeAllScreen
 import com.example.mitvplayer.ui.RecordingsScreen
 import com.example.mitvplayer.ui.Screen
 import com.example.mitvplayer.ui.qaName
@@ -132,24 +132,20 @@ private fun AppRoot(vm: AppViewModel) {
         Screen.Movies -> MoviesScreen(vm)
         Screen.SeriesList -> SeriesScreen(vm)
         is Screen.Grid -> if (top.kind == Kind.SERIES) {
-            PosterGridScreen(
+            SeeAllScreen(
                 vm = vm,
                 state = vm.series,
                 kind = Kind.SERIES,
-                searchScope = SearchScope.SERIES,
                 noun = "series",
-                art = R.drawable.art_series,
                 posterOf = { it.cover },
                 onOpen = { vm.openSeries(it) }
             )
         } else {
-            PosterGridScreen(
+            SeeAllScreen(
                 vm = vm,
                 state = vm.movies,
                 kind = Kind.MOVIES,
-                searchScope = SearchScope.MOVIES,
                 noun = "películas",
-                art = R.drawable.art_movies,
                 posterOf = { it.poster },
                 onOpen = { vm.openMovie(it) }
             )

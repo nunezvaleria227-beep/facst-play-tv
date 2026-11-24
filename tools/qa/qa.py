@@ -447,6 +447,11 @@ def see_all():
         " | ".join(texts(dump(quiet=True))[:8])[:220])
     keys(DOWN, DOWN, RIGHT, wait=0.8)
     shot("ver_todo_moviendo")
+    keys(UP, UP, UP, UP, wait=0.6)  # al botón de orden
+    keys(OK, wait=1.5)
+    keys(OK, wait=1.5)
+    shot("ver_todo_orden")
+    log("INFO", "Después de cambiar el orden: " + " | ".join(texts(dump(quiet=True))[:6])[:220])
     t0 = now_dev()
     keys(BACK, wait=0.2)
     t, _ = wait_qa(r"^NAV Movies", t0, timeout=10)
@@ -514,6 +519,11 @@ def live_channel():
     keys(DOWN, DOWN, wait=4.5)  # quedarse en un canal: se ve solo en la vista previa
     shot("vivo_vista_previa")
     log("INFO", "En vivo con vista previa: " + " | ".join(texts(dump(quiet=True))[:12])[:300])
+    keys(9, 10, wait=4.0)  # teclea "23": va directo al canal 23 (aunque esté en otra categoría)
+    shot("vivo_tecleo_23")
+    on = texts(dump(quiet=True))
+    log("OK" if any(t.startswith("23 ") for t in on) else "FALLO",
+        "Teclear 23 en En vivo lleva al canal 23: " + " | ".join(on[:6])[:220])
     keys(UP, UP, UP, wait=0.6)  # a las categorías
     keys(RIGHT, RIGHT, wait=1.5)
     shot("vivo_categorias")

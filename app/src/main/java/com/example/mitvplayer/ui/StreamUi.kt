@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -66,6 +67,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -85,8 +87,15 @@ val NAV_EXPANDED: Dp = 200.dp
 /** Margen izquierdo del contenido (deja libre el menú cerrado). */
 val CONTENT_START: Dp = 84.dp
 
-/** Alto de la portada grande de arriba (Inicio, Películas, Series). */
+/** Alto de la portada grande de arriba (Inicio, Películas, Series) en una tele normal (540 dp de alto). */
 val HERO_HEIGHT: Dp = 286.dp
+
+/** Lo que necesita una fila completa de pósters debajo de la portada. */
+private val ROW_SPACE: Dp = 216.dp
+private val HERO_MIN_HEIGHT: Dp = 200.dp
+
+/** Alto de la portada para esta pantalla: si la pantalla es más bajita, se achica para que quepa una fila entera. */
+fun heroHeightFor(screenHeight: Dp): Dp = (screenHeight - ROW_SPACE).coerceIn(HERO_MIN_HEIGHT, HERO_HEIGHT)
 
 /** Intenta poner el foco; false si ese elemento no está en pantalla. */
 fun FocusRequester.tryFocus(): Boolean =
@@ -506,7 +515,10 @@ fun BoxScope.HeroBackground(hero: HeroItem?, details: HeroDetails?, height: Dp =
     }
 }
 
-/** Texto de la portada: tipo, título, datos, de qué trata, avance y botones. */
+/**
+ * Texto de la portada: tipo, título, datos, de qué trata, avance y botones. Los botones quedan siempre abajo,
+ * a la misma altura, cambie lo que cambie el texto (así el control no "brinca").
+ */
 @Composable
 fun HeroText(
     hero: HeroItem?,
@@ -515,8 +527,9 @@ fun HeroText(
     placeholder: String = "Facst Play TV",
     buttons: (@Composable RowScope.() -> Unit)? = null
 ) {
+    var titleLines by remember { mutableIntStateOf(1) }
     Column(
-        modifier = modifier.padding(start = CONTENT_START, end = 40.dp, top = 30.dp),
+        modifier = modifier.padding(start = CONTENT_START, end = 40.dp, top = 24.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         if (hero != null) {
@@ -554,6 +567,7 @@ fun HeroText(
             fontStyle = FontStyle.Italic,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+            onTextLayout = { titleLines = it.lineCount },
             modifier = Modifier.fillMaxWidth(0.58f)
         )
         val meta = listOfNotNull(hero?.subtitle, details?.meta?.takeIf { it.isNotBlank() }).joinToString("   ·   ")
@@ -569,17 +583,19 @@ fun HeroText(
             )
         }
         val plot = details?.plot
-        Text(
-            text = plot.orEmpty(),
-            color = TextSecondary,
-            fontSize = 12.sp,
-            lineHeight = 17.sp,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .fillMaxWidth(0.5f)
-                .height(52.dp)
-        )
+        if (!plot.isNullOrBlank()) {
+            Text(
+                text = plot,
+                color = TextSecondary,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                // Con el título en dos renglones, la sinopsis se acorta para que no tape los botones.
+                maxLines = if (titleLines > 1) 2 else 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(0.5f)
+            )
+        }
+        Spacer(Modifier.weight(1f))
         val progress = hero?.progress
         if (progress != null && progress > 0f) {
             Box(
@@ -598,7 +614,6 @@ fun HeroText(
             }
         }
         if (buttons != null) {
-            Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), content = buttons)
         }
     }
@@ -610,7 +625,8 @@ fun HeroButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    primary: Boolean = false
+    primary: Boolean = false,
+    compact: Boolean = false
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(8.dp)
@@ -627,7 +643,7 @@ fun HeroButton(
                 shape
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 9.dp),
+            .padding(horizontal = if (compact) 13.dp else 18.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -692,10 +708,13 @@ class RowsMemory {
 
     fun isTarget(rowKey: String, col: Int): Boolean = row == rowKey && column == col
 
+    /** Empezar desde arriba (al entrar a la sección desde el menú lateral). */
     fun reset() {
         row = null
         column = 0
         hero = null
+        rowStates.clear()
+        listState.requestScrollToItem(0)
     }
 }
 
@@ -735,13 +754,17 @@ fun MediaRows(
                         // Al volver a esta fila (▲ ▼), el foco cae en la tarjeta donde se estaba.
                         .focusRestorer()
                 ) {
+                    val seeAll = row.onSeeAll
                     items(row.size, key = row.keyAt) { col ->
                         val entry = remember(row, col) { row.entryAt(col) }
                         val target = memory.isTarget(row.key, col)
+                        val last = seeAll == null && col == row.size - 1
                         MediaTile(
                             entry = entry,
                             style = row.style,
                             modifier = Modifier
+                                // Al final de la fila, ▶ no hace nada (no salta a los botones de arriba).
+                                .then(if (last) Modifier.focusProperties { right = FocusRequester.Cancel } else Modifier)
                                 .then(if (target) Modifier.focusRequester(memory.requester) else Modifier)
                                 .onFocusChanged { state ->
                                     if (state.isFocused) {
@@ -755,9 +778,10 @@ fun MediaRows(
                                 }
                         )
                     }
-                    val seeAll = row.onSeeAll
                     if (seeAll != null) {
-                        item(key = "__ver_todo") { SeeAllTile(row.style, seeAll) }
+                        item(key = "__ver_todo") {
+                            SeeAllTile(row.style, seeAll, Modifier.focusProperties { right = FocusRequester.Cancel })
+                        }
                     }
                 }
             }
@@ -910,7 +934,7 @@ private fun MediaTile(entry: RowEntry, style: TileStyle, modifier: Modifier) {
 
 /** Última tarjeta de una fila: abre la lista completa. */
 @Composable
-private fun SeeAllTile(style: TileStyle, onClick: () -> Unit) {
+private fun SeeAllTile(style: TileStyle, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val width = when (style) {
         TileStyle.POSTER -> 110.dp
         TileStyle.WIDE -> 206.dp
@@ -918,7 +942,7 @@ private fun SeeAllTile(style: TileStyle, onClick: () -> Unit) {
     }
     FocusCard(
         onClick = onClick,
-        modifier = Modifier
+        modifier = modifier
             .width(width)
             .then(if (style == TileStyle.POSTER) Modifier.aspectRatio(2f / 3f) else Modifier.height(112.dp)),
         shape = RoundedCornerShape(10.dp),

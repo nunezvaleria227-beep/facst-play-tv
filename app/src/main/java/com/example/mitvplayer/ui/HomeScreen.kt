@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,7 +22,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import com.example.mitvplayer.data.Kind
 import com.example.mitvplayer.data.LiveChannel
@@ -129,9 +133,11 @@ fun HomeScreen(vm: AppViewModel) {
         onBackToContent = { memory.requester.tryFocus() || playRequester.tryFocus() },
         exitOnBack = true
     ) {
-        StreamHero(vm, heroState, featured, playRequester)
+      BoxWithConstraints(Modifier.fillMaxSize()) {
+        val heroHeight = heroHeightFor(maxHeight)
+        StreamHero(vm, heroState, featured, playRequester, heroHeight = heroHeight)
         Column(Modifier.fillMaxSize()) {
-            Spacer(Modifier.height(HERO_HEIGHT))
+            Spacer(Modifier.height(heroHeight))
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (rows.isEmpty()) {
                     val error = vm.movies.error ?: vm.live.error
@@ -150,6 +156,7 @@ fun HomeScreen(vm: AppViewModel) {
                 }
             }
         }
+      }
     }
 
     UpdateDialogs(vm)
@@ -177,35 +184,50 @@ fun StreamHero(
     heroState: MutableState<HeroItem?>,
     featured: HeroItem?,
     playRequester: FocusRequester,
-    placeholder: String = "Facst Play TV"
+    placeholder: String = "Facst Play TV",
+    heroHeight: Dp = HERO_HEIGHT
 ) {
     var favTick by remember { mutableIntStateOf(0) }
     val shown = heroState.value ?: featured
     val details = rememberHeroDetails(vm, shown)
+    val info = shown?.onInfo
+    val fav = favoriteOf(shown)
+    // ▲ desde los botones no hace nada; ▶ en el último tampoco (no se brinca a otra parte de la pantalla).
+    fun Modifier.edge(last: Boolean): Modifier = focusProperties {
+        up = FocusRequester.Cancel
+        if (last) right = FocusRequester.Cancel
+    }
     Box(Modifier.fillMaxSize()) {
-        HeroBackground(shown, details)
+        HeroBackground(shown, details, height = heroHeight + 90.dp)
         HeroText(
             hero = shown,
             details = details,
             placeholder = placeholder,
             modifier = Modifier
-                .height(HERO_HEIGHT)
+                .height(heroHeight)
                 .fillMaxWidth()
         ) {
             HeroButton(
                 text = playLabel(shown),
                 onClick = { shown?.onPlay?.invoke() },
                 primary = true,
-                modifier = Modifier.focusRequester(playRequester)
+                modifier = Modifier
+                    .edge(last = info == null && fav == null)
+                    .focusRequester(playRequester)
             )
-            shown?.onInfo?.let { info -> HeroButton("ⓘ  Más información", info) }
-            val fav = favoriteOf(shown)
+            if (info != null) {
+                HeroButton("ⓘ  Más información", info, Modifier.edge(last = fav == null))
+            }
             if (fav != null) {
                 val inList = remember(favTick, fav) { vm.isFavorite(fav.first, fav.second) }
-                HeroButton(if (inList) "✓  En mi lista" else "+  Mi lista", {
-                    vm.toggleFavorite(fav.first, fav.second)
-                    favTick++
-                })
+                HeroButton(
+                    if (inList) "✓  En mi lista" else "+  Mi lista",
+                    {
+                        vm.toggleFavorite(fav.first, fav.second)
+                        favTick++
+                    },
+                    Modifier.edge(last = true)
+                )
             }
         }
     }

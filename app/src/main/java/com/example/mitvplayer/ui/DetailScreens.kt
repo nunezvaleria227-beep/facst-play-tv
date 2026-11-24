@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -257,7 +259,7 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
                             .fillMaxWidth()
                             .focusRestorer()
                     ) {
-                        items(similar, key = { it.id }) { other ->
+                        itemsIndexed(similar, key = { _, it -> it.id }) { index, other ->
                             PosterCard(
                                 title = other.name,
                                 imageUrl = other.poster,
@@ -265,7 +267,12 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
                                 favorite = vm.isFavorite(Kind.MOVIES, other.id),
                                 onClick = { vm.openMovie(other) },
                                 onLongClick = { vm.toggleFavorite(Kind.MOVIES, other.id) },
-                                modifier = Modifier.width(96.dp)
+                                modifier = Modifier
+                                    .then(
+                                        if (index == similar.size - 1) Modifier.focusProperties { right = FocusRequester.Cancel }
+                                        else Modifier
+                                    )
+                                    .width(96.dp)
                             )
                         }
                     }
