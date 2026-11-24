@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -42,8 +43,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -104,15 +108,23 @@ private fun DetailBackdrop(url: String?) {
     }
 }
 
+/** Cuántas películas parecidas se muestran abajo de la ficha. */
+private const val SIMILAR_LIMIT = 24
+
 private fun resumeText(entry: ResumeEntry): String = formatDuration(entry.positionMs / 1000)
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalComposeUiApi::class)
 @Composable
 fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
     val context = LocalContext.current
     var info by remember(movie.id) { mutableStateOf<MovieInfo?>(null) }
     var loaded by remember(movie.id) { mutableStateOf(false) }
     val playFocus = remember { FocusRequester() }
+    val scroll = remember(movie.id) { ScrollState(0) }
+    // "Más como esta": otras películas de la misma categoría (las que se ven con el perfil puesto).
+    val similar = remember(movie.id) {
+        vm.movies.itemsFor(movie.categoryId).asSequence().filter { it.id != movie.id }.take(SIMILAR_LIMIT).toList()
+    }
 
     LaunchedEffect(movie.id) {
         info = vm.loadMovieInfo(movie)
@@ -148,7 +160,7 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scroll)
             ) {
                 Text(
                     text = movie.name,
@@ -227,6 +239,35 @@ fun MovieDetailScreen(vm: AppViewModel, movie: Movie) {
                                 .fillMaxHeight()
                                 .background(AccentColor)
                         )
+                    }
+                }
+                if (similar.isNotEmpty()) {
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        text = "Más como esta",
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Black,
+                        fontStyle = FontStyle.Italic
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 14.dp, end = 24.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRestorer()
+                    ) {
+                        items(similar, key = { it.id }) { other ->
+                            PosterCard(
+                                title = other.name,
+                                imageUrl = other.poster,
+                                rating10 = other.rating10,
+                                favorite = vm.isFavorite(Kind.MOVIES, other.id),
+                                onClick = { vm.openMovie(other) },
+                                onLongClick = { vm.toggleFavorite(Kind.MOVIES, other.id) },
+                                modifier = Modifier.width(96.dp)
+                            )
+                        }
                     }
                 }
             }

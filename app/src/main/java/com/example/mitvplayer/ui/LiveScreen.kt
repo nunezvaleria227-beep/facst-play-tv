@@ -13,6 +13,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.foundation.background
@@ -182,6 +187,14 @@ private fun emptyMessage(state: BrowseState<LiveChannel>, radio: Boolean): Strin
 /** Tiempo que el foco se queda en un canal antes de verlo en la vista previa (recorrer rápido no abre canales). */
 private const val PREVIEW_DELAY_MS = 900L
 
+/** Teclas de números del control (y del teclado numérico) para ir directo a un canal. */
+private val ChannelDigits = mapOf(
+    Key.Zero to '0', Key.One to '1', Key.Two to '2', Key.Three to '3', Key.Four to '4',
+    Key.Five to '5', Key.Six to '6', Key.Seven to '7', Key.Eight to '8', Key.Nine to '9',
+    Key.NumPad0 to '0', Key.NumPad1 to '1', Key.NumPad2 to '2', Key.NumPad3 to '3', Key.NumPad4 to '4',
+    Key.NumPad5 to '5', Key.NumPad6 to '6', Key.NumPad7 to '7', Key.NumPad8 to '8', Key.NumPad9 to '9'
+)
+
 /** Espera antes de pedir la guía de una fila (si se sigue bajando, no se pide). */
 private const val GUIDE_ROW_DELAY_MS = 250L
 
@@ -245,6 +258,38 @@ fun LiveScreen(vm: AppViewModel, state: BrowseState<LiveChannel>, title: String,
         if (!channelRequester.tryFocus()) chipRequester.tryFocus()
     }
 
+    // Números del control: se teclea el número del canal y se va directo a él (aunque esté en otra categoría).
+    var typed by remember { mutableStateOf("") }
+    var jumpNote by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(typed) {
+        if (typed.isEmpty()) return@LaunchedEffect
+        delay(1300)
+        val number = typed.toIntOrNull()
+        typed = ""
+        if (number == null || number <= 0) return@LaunchedEffect
+        var list = state.items
+        var index = list.indexOfFirst { it.number == number }
+        if (index < 0 && state.itemsFor(ROW_ALL).any { it.number == number }) {
+            state.select(ROW_ALL)
+            withFrameNanos { }
+            list = state.items
+            index = list.indexOfFirst { it.number == number }
+        }
+        if (index < 0) {
+            jumpNote = "No hay canal $number"
+            delay(1800)
+            jumpNote = null
+            return@LaunchedEffect
+        }
+        val channel = list[index]
+        focusedId = channel.id
+        vm.liveFocusId = channel.id
+        state.itemsListState.scrollToItem((index - 2).coerceAtLeast(0))
+        withFrameNanos { }
+        withFrameNanos { }
+        channelRequester.tryFocus()
+    }
+
     fun openFull(channel: LiveChannel) {
         preview.stop()
         val list = state.items
@@ -271,6 +316,14 @@ fun LiveScreen(vm: AppViewModel, state: BrowseState<LiveChannel>, title: String,
         Column(
             Modifier
                 .fillMaxSize()
+                .onPreviewKeyEvent { event ->
+                    val digit = ChannelDigits[event.key] ?: return@onPreviewKeyEvent false
+                    if (event.type == KeyEventType.KeyDown && typed.length < 5) {
+                        typed += digit
+                        jumpNote = null
+                    }
+                    true
+                }
                 .padding(start = CONTENT_START, end = 24.dp, top = 16.dp)
         ) {
             Row(
@@ -278,13 +331,31 @@ fun LiveScreen(vm: AppViewModel, state: BrowseState<LiveChannel>, title: String,
                     .fillMaxWidth()
                     .height(236.dp)
             ) {
-                LivePreviewBox(
-                    preview = preview,
-                    channel = focused,
-                    modifier = Modifier
+                Box(
+                    Modifier
                         .fillMaxHeight()
                         .aspectRatio(16f / 9f)
-                )
+                ) {
+                    LivePreviewBox(
+                        preview = preview,
+                        channel = focused,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    val note = if (typed.isNotEmpty()) typed else jumpNote
+                    if (note != null) {
+                        Text(
+                            text = note,
+                            color = Color.White,
+                            fontSize = if (typed.isNotEmpty()) 34.sp else 14.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(10.dp)
+                                .background(Color(0xCC000000), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                        )
+                    }
+                }
                 Spacer(Modifier.width(20.dp))
                 LiveInfoPanel(
                     vm = vm,
