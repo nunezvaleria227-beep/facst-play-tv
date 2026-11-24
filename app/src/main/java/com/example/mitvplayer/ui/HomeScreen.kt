@@ -121,6 +121,12 @@ fun HomeScreen(vm: AppViewModel) {
     // Lo que muestra la portada (se lee solo dentro de la portada: mover el foco no redibuja las filas).
     val heroState = remember { mutableStateOf(memory.hero) }
 
+    // Mientras se cargan las listas van apareciendo filas arriba: si todavía no se ha bajado a las filas,
+    // se mantiene la vista desde la primera.
+    LaunchedEffect(rows.size) {
+        if (memory.row == null && rows.isNotEmpty()) memory.listState.scrollToItem(0)
+    }
+
     // Al entrar el foco va a "Ver ahora"; al volver de una ficha o del reproductor, a donde se estaba.
     LaunchedEffect(Unit) {
         withFrameNanos { }

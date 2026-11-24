@@ -44,6 +44,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -63,6 +64,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -730,9 +732,22 @@ fun MediaRows(
     upFromFirstRow: FocusRequester? = null
 ) {
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     LazyColumn(
         state = memory.listState,
-        modifier = modifier,
+        modifier = modifier.onPreviewKeyEvent { event ->
+            // ▲ con la fila de arriba fuera de la pantalla (la fila enfocada siempre sube hasta arriba): primero se
+            // muestra esa fila y luego se mueve el foco, así ▲ nunca brinca a los botones de la portada.
+            if (event.type != KeyEventType.KeyDown || event.key != Key.DirectionUp) return@onPreviewKeyEvent false
+            val current = rows.indexOfFirst { it.key == memory.row }
+            if (current <= 0 || memory.listState.firstVisibleItemIndex < current) return@onPreviewKeyEvent false
+            scope.launch {
+                memory.listState.scrollToItem(current - 1)
+                withFrameNanos { }
+                focusManager.moveFocus(FocusDirection.Up)
+            }
+            true
+        },
         // Espacio al final para que cualquier fila pueda subir hasta arriba.
         contentPadding = PaddingValues(bottom = 300.dp)
     ) {
