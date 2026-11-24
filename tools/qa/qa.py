@@ -82,7 +82,7 @@ def dump(quiet=False):
                 m = re.match(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]", n.get("bounds", ""))
                 if m:
                     out.append({"text": n.get("text", ""), "desc": n.get("content-desc", ""), "cls": n.get("class", ""),
-                                "box": tuple(map(int, m.groups()))})
+                                "box": tuple(map(int, m.groups())), "focused": n.get("focused") == "true"})
             return out
         if not quiet:
             print("[dump falló] " + res.strip()[:160], flush=True)
@@ -98,6 +98,21 @@ def texts(nodes):
                 seen.add(t)
                 out.append(t)
     return out
+
+
+def focused_label(nodes=None):
+    """Texto de lo que tiene el foco (o de lo que hay dentro de ese recuadro)."""
+    nodes = dump(quiet=True) if nodes is None else nodes
+    for n in nodes:
+        if n.get("focused"):
+            own = (n["text"] or n["desc"]).strip()
+            if own:
+                return own
+            x1, y1, x2, y2 = n["box"]
+            inside = [(m["text"] or m["desc"]).strip() for m in nodes
+                      if m is not n and m["box"][0] >= x1 and m["box"][1] >= y1 and m["box"][2] <= x2 and m["box"][3] <= y2]
+            return " / ".join(t for t in inside if t)[:120] or "(sin texto)"
+    return None
 
 
 def find(nodes, labels, exact=False):
@@ -394,6 +409,16 @@ def home_rows():
     keys(RIGHT, RIGHT, RIGHT, wait=2.2)
     shot("inicio_portada_cambia")
     log("INFO", "Portada al recorrer la fila: " + " | ".join(texts(dump(quiet=True))[:8])[:260])
+    # ▲ de fila en fila: debe pasar a la fila de arriba (aunque esté fuera de la pantalla), no brincar a la portada.
+    ups = []
+    for i in range(3):
+        keys(UP, wait=1.4)
+        nodes = dump(quiet=True)
+        ups.append(f"{focused_label(nodes)} [{(texts(nodes) or ['?'])[0]}]")
+    shot("inicio_arriba_tres_veces")
+    ok = ups[-1].startswith("▶") and not ups[0].startswith("▶") and not ups[1].startswith("▶")
+    log("OK" if ok else "FALLO", "▲ por las filas del Inicio (fila 3 → 2 → 1 → portada): " + " → ".join(ups)[:400])
+    keys(DOWN, DOWN, wait=1.2)
     lags = lags_between(t0, now_dev())
     worst = max((l[1] for l in lags), default=0)
     log("OK" if worst <= 400 else "LENTO", f"Moverse por las filas del Inicio: {len(lags)} trabones, peor {worst} ms")
@@ -524,6 +549,15 @@ def live_channel():
     on = texts(dump(quiet=True))
     log("OK" if any(t.startswith("23 ") for t in on) else "FALLO",
         "Teclear 23 en En vivo lleva al canal 23: " + " | ".join(on[:6])[:220])
+    # ▲ tres veces: del 23 al 20 (el 20 está fuera de la pantalla); no debe brincar a las categorías.
+    keys(UP, wait=0.6)
+    keys(UP, wait=0.6)
+    keys(UP, wait=1.5)
+    nodes = dump(quiet=True)
+    on = texts(nodes)
+    log("OK" if any(t.startswith("20 ") for t in on) else "FALLO",
+        f"▲ en la lista de canales sube de canal en canal: enfocado «{focused_label(nodes)}»; " + " | ".join(on[:5])[:200])
+    shot("vivo_subiendo")
     keys(UP, UP, UP, wait=0.6)  # a las categorías
     keys(RIGHT, RIGHT, wait=1.5)
     shot("vivo_categorias")
