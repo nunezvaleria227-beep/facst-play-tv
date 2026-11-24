@@ -183,7 +183,8 @@ private fun <T : Item> BrowseRows(
                         rows = rows,
                         memory = memory,
                         onFocusEntry = { heroState.value = it.hero },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        upFromFirstRow = playRequester
                     )
                 }
             }
@@ -322,8 +323,17 @@ fun <T : Item> SeeAllScreen(
                                 onClick = { onOpen(item) },
                                 onLongClick = { vm.toggleFavorite(kind, item.id) },
                                 modifier = Modifier
-                                    // ▶ en la última columna no se sale al botón de orden.
-                                    .then(if (lastColumn) Modifier.focusProperties { right = FocusRequester.Cancel } else Modifier)
+                                    // ▶ en la última columna no se sale; ▲ en la primera fila va al botón de orden.
+                                    .then(
+                                        if (lastColumn || index < SEE_ALL_COLUMNS) {
+                                            Modifier.focusProperties {
+                                                if (lastColumn) right = FocusRequester.Cancel
+                                                if (index < SEE_ALL_COLUMNS) up = sortRequester
+                                            }
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
                                     .focusIf(target, state.restoreRequester)
                                     .onFocusChanged {
                                         if (it.isFocused) {

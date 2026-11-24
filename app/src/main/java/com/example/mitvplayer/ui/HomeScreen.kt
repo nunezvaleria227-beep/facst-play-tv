@@ -152,7 +152,8 @@ fun HomeScreen(vm: AppViewModel) {
                         rows = rows,
                         memory = memory,
                         onFocusEntry = { heroState.value = it.hero },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        upFromFirstRow = playRequester
                     )
                 }
             }

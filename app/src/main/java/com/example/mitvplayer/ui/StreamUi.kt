@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -209,8 +210,8 @@ private fun SideNav(
                 )
             )
             .onFocusChanged { expanded = it.hasFocus }
-            // Al entrar al menú con ◀, el foco cae en la sección en la que se está.
-            .focusProperties { enter = { currentItem } }
+            // Al menú solo se entra con ◀ (y cae en la sección en la que se está); ▲ ▼ desde la pantalla no lo abren.
+            .focusProperties { enter = { if (it == FocusDirection.Left) currentItem else FocusRequester.Cancel } }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight) onBackToContent() else false
             }
@@ -724,7 +725,9 @@ fun MediaRows(
     rows: List<MediaRow>,
     memory: RowsMemory,
     onFocusEntry: (RowEntry) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** A dónde va ▲ desde la primera fila (el botón principal de la portada). */
+    upFromFirstRow: FocusRequester? = null
 ) {
     val scope = rememberCoroutineScope()
     LazyColumn(
@@ -755,6 +758,7 @@ fun MediaRows(
                         .focusRestorer()
                 ) {
                     val seeAll = row.onSeeAll
+                    val up = if (rowIndex == 0) upFromFirstRow else null
                     items(row.size, key = row.keyAt) { col ->
                         val entry = remember(row, col) { row.entryAt(col) }
                         val target = memory.isTarget(row.key, col)
@@ -764,7 +768,7 @@ fun MediaRows(
                             style = row.style,
                             modifier = Modifier
                                 // Al final de la fila, ▶ no hace nada (no salta a los botones de arriba).
-                                .then(if (last) Modifier.focusProperties { right = FocusRequester.Cancel } else Modifier)
+                                .tileEdges(last = last, up = up)
                                 .then(if (target) Modifier.focusRequester(memory.requester) else Modifier)
                                 .onFocusChanged { state ->
                                     if (state.isFocused) {
@@ -780,7 +784,7 @@ fun MediaRows(
                     }
                     if (seeAll != null) {
                         item(key = "__ver_todo") {
-                            SeeAllTile(row.style, seeAll, Modifier.focusProperties { right = FocusRequester.Cancel })
+                            SeeAllTile(row.style, seeAll, Modifier.tileEdges(last = true, up = up))
                         }
                     }
                 }
@@ -788,6 +792,18 @@ fun MediaRows(
         }
     }
 }
+
+/** Bordes de una tarjeta: ▶ en la última no se sale de la fila; ▲ en la primera fila va a [up]. */
+@OptIn(ExperimentalComposeUiApi::class)
+private fun Modifier.tileEdges(last: Boolean, up: FocusRequester?): Modifier =
+    if (!last && up == null) {
+        this
+    } else {
+        focusProperties {
+            if (last) right = FocusRequester.Cancel
+            if (up != null) this.up = up
+        }
+    }
 
 @Composable
 private fun MediaTile(entry: RowEntry, style: TileStyle, modifier: Modifier) {

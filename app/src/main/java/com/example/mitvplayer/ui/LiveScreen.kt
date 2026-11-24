@@ -216,6 +216,7 @@ fun LiveScreen(vm: AppViewModel, state: BrowseState<LiveChannel>, title: String,
     val preview = remember { LivePreview(context) }
     val channelRequester = remember { FocusRequester() }
     val chipRequester = remember { FocusRequester() }
+    val panelRequester = remember { FocusRequester() }
     var focusedId by remember { mutableStateOf(vm.liveFocusId) }
     var resumeTick by remember { mutableIntStateOf(0) }
 
@@ -374,6 +375,7 @@ fun LiveScreen(vm: AppViewModel, state: BrowseState<LiveChannel>, title: String,
                     title = title,
                     onFullscreen = { focused?.let { openFull(it) } },
                     onGuide = { vm.open(Screen.EpgGrid(state.selectedId, state.selectedName)) },
+                    firstButton = panelRequester,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -382,6 +384,7 @@ fun LiveScreen(vm: AppViewModel, state: BrowseState<LiveChannel>, title: String,
             CategoryChips(
                 state = state,
                 requester = chipRequester,
+                upTarget = panelRequester,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 14.dp, bottom = 8.dp)
@@ -521,6 +524,7 @@ private fun LiveInfoPanel(
     title: String,
     onFullscreen: () -> Unit,
     onGuide: () -> Unit,
+    firstButton: FocusRequester,
     modifier: Modifier
 ) {
     val epg by produceState<List<EpgEntry>?>(null, channel?.id) {
@@ -630,7 +634,10 @@ private fun LiveInfoPanel(
             modifier = Modifier.horizontalScroll(rememberScrollState())
         ) {
             if (channel != null) {
-                HeroButton("▶  Pantalla completa", onFullscreen, Modifier.edge(last = false), primary = true, compact = true)
+                HeroButton(
+                    "▶  Pantalla completa", onFullscreen, Modifier.edge(last = false).focusRequester(firstButton),
+                    primary = true, compact = true
+                )
                 val favorite = remember(favTick, channel.id) { vm.isFavorite(Kind.LIVE, channel.id) }
                 HeroButton(
                     if (favorite) "★  Favorito" else "☆  Favorito",
@@ -642,7 +649,13 @@ private fun LiveInfoPanel(
                     compact = true
                 )
             }
-            HeroButton("▦  Guía", onGuide, Modifier.edge(last = recording == null), compact = true)
+            HeroButton(
+                "▦  Guía", onGuide,
+                Modifier
+                    .edge(last = recording == null)
+                    .then(if (channel == null) Modifier.focusRequester(firstButton) else Modifier),
+                compact = true
+            )
             if (recording != null) {
                 HeroButton("■  Detener grabación", { RecordingManager.stop() }, Modifier.edge(last = true), compact = true)
             }
@@ -653,7 +666,12 @@ private fun LiveInfoPanel(
 /** Categorías en una fila: con ◀ ▶ se cambia de categoría al momento (sin pulsar OK). */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun CategoryChips(state: BrowseState<LiveChannel>, requester: FocusRequester, modifier: Modifier) {
+private fun CategoryChips(
+    state: BrowseState<LiveChannel>,
+    requester: FocusRequester,
+    upTarget: FocusRequester,
+    modifier: Modifier
+) {
     val rows = state.rows
     val selectedIndex = rows.indexOfFirst { it.id == state.selectedId }.coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
@@ -676,8 +694,11 @@ private fun CategoryChips(state: BrowseState<LiveChannel>, requester: FocusReque
             val shape = RoundedCornerShape(50)
             Row(
                 modifier = Modifier
-                    // En la última categoría, ▶ no se sale a los botones de arriba.
-                    .then(if (index == rows.size - 1) Modifier.focusProperties { right = FocusRequester.Cancel } else Modifier)
+                    // ▲ va a los botones de arriba; en la última categoría, ▶ no se sale a otra parte.
+                    .focusProperties {
+                        up = upTarget
+                        if (index == rows.size - 1) right = FocusRequester.Cancel
+                    }
                     .then(if (index == selectedIndex) Modifier.focusRequester(requester) else Modifier)
                     .onFocusChanged {
                         focusedChip = it.isFocused
