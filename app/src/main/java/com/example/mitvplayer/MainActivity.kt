@@ -55,6 +55,12 @@ class MainActivity : ComponentActivity() {
         return super.dispatchGenericMotionEvent(event)
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Al volver de otra app o de una ventana del sistema, las barras se vuelven a esconder.
+        if (hasFocus) hideSystemBars()
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         if (Config.QA_BUILD) qaOpen(intent)
@@ -83,6 +89,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        hideSystemBars()
         if (Config.QA_BUILD) qaOpen(intent)
         reportLastCrash()
         setContent {

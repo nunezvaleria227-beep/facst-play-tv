@@ -6,25 +6,36 @@ import java.util.Locale
 
 private val SPANISH: Locale = Locale.forLanguageTag("es-MX")
 
+/**
+ * Formatos de fecha y hora guardados (uno por hilo): crear uno nuevo en cada fila de la guía es lento
+ * en los aparatos sencillos.
+ */
+private class DateFormatCache(private val pattern: String, private val locale: () -> Locale) :
+    ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue(): SimpleDateFormat = SimpleDateFormat(pattern, locale())
+    fun format(millis: Long): String = get()!!.format(Date(millis))
+}
+
+private val CLOCK = DateFormatCache("hh:mm a") { Locale.getDefault() }
+private val DATE_LONG = DateFormatCache("MMMM d, yyyy") { SPANISH }
+private val DAY_SHORT = DateFormatCache("EEE d MMM") { SPANISH }
+private val HOUR_MINUTE = DateFormatCache("HH:mm") { Locale.getDefault() }
+private val DAY_KEY = DateFormatCache("yyyy-MM-dd") { Locale.US }
+
 /** "04:57 PM" */
-fun formatClock(millis: Long): String =
-    SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(millis))
+fun formatClock(millis: Long): String = CLOCK.format(millis)
 
 /** "octubre 12, 2026" */
-fun formatDateLong(millis: Long): String =
-    SimpleDateFormat("MMMM d, yyyy", SPANISH).format(Date(millis))
+fun formatDateLong(millis: Long): String = DATE_LONG.format(millis)
 
 /** "lun 12 oct" */
-fun formatDayShort(millis: Long): String =
-    SimpleDateFormat("EEE d MMM", SPANISH).format(Date(millis))
+fun formatDayShort(millis: Long): String = DAY_SHORT.format(millis)
 
 /** "17:30" a partir de segundos desde epoch. */
-fun formatHm(epochSeconds: Long): String =
-    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(epochSeconds * 1000))
+fun formatHm(epochSeconds: Long): String = HOUR_MINUTE.format(epochSeconds * 1000)
 
 /** Clave de día (para agrupar programas por fecha). */
-fun dayKey(epochSeconds: Long): String =
-    SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(epochSeconds * 1000))
+fun dayKey(epochSeconds: Long): String = DAY_KEY.format(epochSeconds * 1000)
 
 /** "hace 5 min" */
 fun agoText(updatedAtMillis: Long, nowMillis: Long): String {

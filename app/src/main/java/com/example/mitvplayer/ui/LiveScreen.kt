@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -85,6 +86,7 @@ import com.example.mitvplayer.data.EpgEntry
 import com.example.mitvplayer.data.Kind
 import com.example.mitvplayer.data.LiveChannel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Reproductor pequeño de la vista previa de En vivo. Solo existe mientras se está viendo un canal. */
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -264,12 +266,9 @@ fun LiveScreen(vm: AppViewModel, state: BrowseState<LiveChannel>, title: String,
     // Números del control: se teclea el número del canal y se va directo a él (aunque esté en otra categoría).
     var typed by remember { mutableStateOf("") }
     var jumpNote by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(typed) {
-        if (typed.isEmpty()) return@LaunchedEffect
-        delay(1300)
-        val number = typed.toIntOrNull()
-        typed = ""
-        if (number == null || number <= 0) return@LaunchedEffect
+    val scope = rememberCoroutineScope()
+
+    suspend fun jumpTo(number: Int) {
         var list = state.items
         var index = list.indexOfFirst { it.number == number }
         if (index < 0 && state.itemsFor(ROW_ALL).any { it.number == number }) {
@@ -282,7 +281,7 @@ fun LiveScreen(vm: AppViewModel, state: BrowseState<LiveChannel>, title: String,
             jumpNote = "No hay canal $number"
             delay(1800)
             jumpNote = null
-            return@LaunchedEffect
+            return
         }
         val channel = list[index]
         focusedId = channel.id
@@ -291,6 +290,15 @@ fun LiveScreen(vm: AppViewModel, state: BrowseState<LiveChannel>, title: String,
         withFrameNanos { }
         withFrameNanos { }
         channelRequester.tryFocus()
+    }
+
+    LaunchedEffect(typed) {
+        if (typed.isEmpty()) return@LaunchedEffect
+        delay(1300)
+        val number = typed.toIntOrNull()
+        // El salto va aparte: al borrar lo tecleado este efecto se cancela, pero el salto debe terminar.
+        if (number != null && number > 0) scope.launch { jumpTo(number) }
+        typed = ""
     }
 
     fun openFull(channel: LiveChannel) {

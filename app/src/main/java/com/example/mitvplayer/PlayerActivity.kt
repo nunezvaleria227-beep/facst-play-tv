@@ -225,6 +225,11 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -239,6 +244,7 @@ class PlayerActivity : ComponentActivity() {
         resumePositionMs = savedInstanceState?.getLong(KEY_POSITION) ?: 0L
 
         setContentView(R.layout.activity_player)
+        hideSystemBars()
         playerView = findViewById(R.id.player_view)
         banner = findViewById(R.id.banner)
         titleText = findViewById(R.id.title_text)
