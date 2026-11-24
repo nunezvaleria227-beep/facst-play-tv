@@ -702,12 +702,19 @@ class RowsMemory {
     var hero: HeroItem? = null
     val requester = FocusRequester()
 
+    /** Última tarjeta enfocada en cada fila (para volver a ella con ▲ ▼). */
+    private val columns = HashMap<String, Int>()
+
     fun rowState(key: String): LazyListState = rowStates.getOrPut(key) { LazyListState() }
 
     fun focused(rowKey: String, col: Int) {
         row = rowKey
         column = col
+        columns[rowKey] = col
     }
+
+    /** Dónde caer al volver a una fila: la última tarjeta enfocada ahí o, si no, la primera que se ve. */
+    fun columnFor(rowKey: String): Int = columns[rowKey] ?: rowState(rowKey).firstVisibleItemIndex
 
     fun isTarget(rowKey: String, col: Int): Boolean = row == rowKey && column == col
 
@@ -717,6 +724,7 @@ class RowsMemory {
         column = 0
         hero = null
         rowStates.clear()
+        columns.clear()
         listState.requestScrollToItem(0)
     }
 }
@@ -736,15 +744,23 @@ fun MediaRows(
     LazyColumn(
         state = memory.listState,
         modifier = modifier.onPreviewKeyEvent { event ->
-            // ▲ con la fila de arriba fuera de la pantalla (la fila enfocada siempre sube hasta arriba): primero se
-            // muestra esa fila y luego se mueve el foco, así ▲ nunca brinca a los botones de la portada.
+            // ▲ con la fila de arriba fuera de la pantalla (la fila enfocada siempre sube hasta arriba): se muestra
+            // esa fila y el foco va directo a la tarjeta donde se estaba en ella; así ▲ nunca brinca a la portada.
             if (event.type != KeyEventType.KeyDown || event.key != Key.DirectionUp) return@onPreviewKeyEvent false
             val current = rows.indexOfFirst { it.key == memory.row }
             if (current <= 0 || memory.listState.firstVisibleItemIndex < current) return@onPreviewKeyEvent false
+            val previous = rows[current - 1]
+            val col = memory.columnFor(previous.key).coerceIn(0, (previous.size - 1).coerceAtLeast(0))
+            com.example.mitvplayer.QaProbe.log("FOCO ▲ de ${memory.row} a ${previous.key} col $col")
+            memory.focused(previous.key, col)
             scope.launch {
                 memory.listState.scrollToItem(current - 1)
                 withFrameNanos { }
-                focusManager.moveFocus(FocusDirection.Up)
+                withFrameNanos { }
+                if (!memory.requester.tryFocus()) {
+                    com.example.mitvplayer.QaProbe.log("FOCO ▲ sin tarjeta; se busca hacia arriba")
+                    focusManager.moveFocus(FocusDirection.Up)
+                }
             }
             true
         },
@@ -788,6 +804,7 @@ fun MediaRows(
                                 .onFocusChanged { state ->
                                     if (state.isFocused) {
                                         val newRow = memory.row != row.key
+                                        com.example.mitvplayer.QaProbe.log("FOCO ${row.key} col $col")
                                         memory.focused(row.key, col)
                                         memory.hero = entry.hero
                                         onFocusEntry(entry)

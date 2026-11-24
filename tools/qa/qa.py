@@ -411,11 +411,13 @@ def home_rows():
     log("INFO", "Portada al recorrer la fila: " + " | ".join(texts(dump(quiet=True))[:8])[:260])
     # ▲ de fila en fila: debe pasar a la fila de arriba (aunque esté fuera de la pantalla), no brincar a la portada.
     ups = []
+    t_up = now_dev()
     for i in range(3):
         keys(UP, wait=1.4)
         nodes = dump(quiet=True)
         ups.append(f"{focused_label(nodes)} [{(texts(nodes) or ['?'])[0]}]")
     shot("inicio_arriba_tres_veces")
+    log("INFO", "Foco durante ▲: " + " · ".join(m for t, m in qa_lines(t_up) if m.startswith("FOCO"))[:500])
     ok = ups[-1].startswith("▶") and not ups[0].startswith("▶") and not ups[1].startswith("▶")
     log("OK" if ok else "FALLO", "▲ por las filas del Inicio (fila 3 → 2 → 1 → portada): " + " → ".join(ups)[:400])
     keys(DOWN, DOWN, wait=1.2)
