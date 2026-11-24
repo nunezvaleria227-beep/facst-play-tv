@@ -791,8 +791,15 @@ fun MediaRows(
                                         memory.focused(row.key, col)
                                         memory.hero = entry.hero
                                         onFocusEntry(entry)
-                                        // La fila con el foco sube hasta arriba (como en las apps de streaming).
-                                        if (newRow) scope.launch { memory.listState.animateScrollToItem(rowIndex) }
+                                        // La fila con el foco sube hasta arriba (como en las apps de streaming). Se espera un
+                                        // cuadro: así este movimiento va después del que hace la lista para mostrar la tarjeta
+                                        // (si no, ese gana y la fila se queda a medias).
+                                        if (newRow) {
+                                            scope.launch {
+                                                withFrameNanos { }
+                                                memory.listState.animateScrollToItem(rowIndex)
+                                            }
+                                        }
                                     }
                                 }
                         )
