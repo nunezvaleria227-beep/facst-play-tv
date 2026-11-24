@@ -505,6 +505,7 @@ private fun LivePreviewBox(preview: LivePreview, channel: LiveChannel?, modifier
 }
 
 /** Lo que está pasando en el canal enfocado y botones (pantalla completa, favorito, guía completa). */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun LiveInfoPanel(
     vm: AppViewModel,

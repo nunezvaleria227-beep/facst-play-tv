@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -178,6 +179,7 @@ fun HomeScreen(vm: AppViewModel) {
  * Portada grande con sus botones (▶ Ver ahora, ⓘ Más información, + Mi lista) para lo que está en [heroState]
  * o, si no hay nada enfocado todavía, para [featured]. También la usan Películas y Series.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun StreamHero(
     vm: AppViewModel,
