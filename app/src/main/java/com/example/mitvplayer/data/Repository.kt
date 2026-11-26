@@ -107,9 +107,17 @@ class Repository(
             null
         } catch (e: AccountRejectedException) {
             e
+        } catch (e: AccessDeniedException) {
+            if (isAccountProblem(c.server)) accountRejectedByServer() else null
         } catch (e: Exception) {
             null
         }
+    }
+
+    /** El 403 fue por la cuenta (el servidor sí acepta a la app cuando no se mandan datos). */
+    private fun isAccountProblem(server: String): Boolean {
+        val code = api.probe(server)
+        return code == 401 || code == 200
     }
 
     /**
@@ -134,6 +142,12 @@ class Repository(
                 return info
             } catch (e: AccessDeniedException) {
                 denied = e
+                // Si sin datos el servidor contesta 401 (o 200), sí acepta a la app: el 403 es por el usuario (datos
+                // mal o demostración vencida). Insistir con otras identificaciones solo sumaría intentos fallidos.
+                if (isAccountProblem(c.server)) {
+                    Config.userAgent = candidates.first()
+                    throw accountRejectedByServer()
+                }
             }
         }
         Config.userAgent = candidates.first()

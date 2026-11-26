@@ -26,10 +26,12 @@ USER = "demo"
 PASS = "demo"
 
 # Cuentas de prueba: "prueba" y "nuevo" se pueden vencer con /__expire?user=… (como una demostración que se acaba).
+# Vencida, "prueba" contesta 200 con estado "Expired" (como muchos paneles) y "nuevo" contesta 403, igual que el
+# servidor real (403 = el usuario no sirve; 401 = faltan los datos pero la app sí es aceptada).
 ACCOUNTS = {
-    "demo": {"pass": "demo", "status": "Active"},
-    "prueba": {"pass": "1234", "status": "Active"},
-    "nuevo": {"pass": "5678", "status": "Active"},
+    "demo": {"pass": "demo", "status": "Active", "style": "403"},
+    "prueba": {"pass": "1234", "status": "Active", "style": "json"},
+    "nuevo": {"pass": "5678", "status": "Active", "style": "403"},
 }
 MEDIA = "."
 RATE = 0  # bytes por segundo para las listas grandes (0 = sin límite)
@@ -395,13 +397,15 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_file(os.path.join(MEDIA, name), "image/jpeg")
 
     def api(self, q):
+        if "username" not in q and "password" not in q:
+            return self.send_json({"error": "faltan usuario y contraseña"}, 401)
         user = q.get("username", "")
         acc = ACCOUNTS.get(user)
         if acc is None or q.get("password") != acc["pass"]:
-            return self.send_json({"user_info": {"auth": 0}})
+            return self.send_bytes(b"Forbidden", "text/plain", 403)
         action = q.get("action")
-        if action is not None and acc["status"] != "Active":
-            return self.send_json({"user_info": {"auth": 0}})
+        if acc["status"] != "Active" and (action is not None or acc["style"] == "403"):
+            return self.send_bytes(b"Forbidden", "text/plain", 403)
         if action is None:
             expired = acc["status"] != "Active"
             return self.send_json({

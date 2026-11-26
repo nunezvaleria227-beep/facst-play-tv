@@ -391,6 +391,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 AccountRejectedException.Reason.EXPIRED -> "cuenta vencida"
                 AccountRejectedException.Reason.DISABLED -> "cuenta desactivada"
                 AccountRejectedException.Reason.WRONG_CREDENTIALS -> "usuario o contraseña incorrectos"
+                AccountRejectedException.Reason.REJECTED -> "el servidor no aceptó el usuario (vencido o datos mal)"
                 null -> if (shown is AccessDeniedException) "el servidor rechazó la conexión (${shown.code})" else "sin respuesta del servidor"
             },
             detail = message.lineSequence().first(),

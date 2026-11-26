@@ -35,8 +35,16 @@ class AccessDeniedException(val code: Int) : AuthException(
  * y muchos intentos fallidos hacen que el servidor bloquee por un rato el internet del cliente.
  */
 class AccountRejectedException(val reason: Reason, message: String) : AuthException(message) {
-    enum class Reason { WRONG_CREDENTIALS, EXPIRED, DISABLED }
+    /** REJECTED: el servidor no aceptó el usuario sin decir por qué (403): datos mal o cuenta vencida. */
+    enum class Reason { WRONG_CREDENTIALS, EXPIRED, DISABLED, REJECTED }
 }
+
+/** El servidor contestó 403 al usuario (no a la app): datos mal o demostración/suscripción vencida. */
+fun accountRejectedByServer() = AccountRejectedException(
+    AccountRejectedException.Reason.REJECTED,
+    "El servidor no aceptó este usuario.\nSi era una demostración, ya terminó: escribe el usuario y la contraseña nuevos " +
+        "que te enviaron (mayúsculas y minúsculas cuentan)."
+)
 
 private fun wrongCredentials() = AccountRejectedException(
     AccountRejectedException.Reason.WRONG_CREDENTIALS,
@@ -375,6 +383,22 @@ class XtreamApi(private val client: OkHttpClient) {
         if (action != null) builder.addQueryParameter("action", action)
         extra.forEach { (key, value) -> builder.addQueryParameter(key, value) }
         return builder.build()
+    }
+
+    /**
+     * Pide player_api.php sin usuario ni contraseña y devuelve el código HTTP (null si no hubo respuesta).
+     * Este servidor contesta 401 cuando acepta la app (la identificación) pero faltan los datos, y 403 cuando el
+     * usuario no sirve: así se distingue "la cuenta no sirve" de "el servidor no deja pasar a la app".
+     */
+    fun probe(server: String): Int? = try {
+        val request = Request.Builder()
+            .url((server + "/player_api.php").toHttpUrl())
+            .header("User-Agent", Config.USER_AGENT)
+            .header("Accept", "application/json")
+            .build()
+        quickClient.newCall(request).execute().use { it.code }
+    } catch (e: Exception) {
+        null
     }
 
     /** Para entrar: se rinde pronto si el servidor no contesta. */

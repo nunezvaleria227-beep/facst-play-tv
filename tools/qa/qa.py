@@ -718,55 +718,64 @@ def memory():
 
 @step("demostración vencida y usuario nuevo")
 def demo_expiry():
-    # Empieza de cero y entra con una cuenta de demostración ("prueba").
+    def restart_app(wait):
+        sh(f"am force-stop {PKG}")
+        time.sleep(1.5)
+        start_app()
+        time.sleep(wait)
+
+    def expired_on_open(user, pw, style):
+        """Entra con la cuenta, se vence y se vuelve a abrir la app: aviso, campos vacíos y un solo intento."""
+        t0 = now_dev()
+        if not enter_credentials(user, pw):
+            log("FALLO", f"{style}: no encontré los campos de entrada")
+            return False
+        t, _ = wait_qa(r"^NAV Home", t0, timeout=60)
+        if not t:
+            log("FALLO", f"{style}: no entró con {user}: " + " | ".join(texts(dump())[:10]))
+            return False
+        time.sleep(4)
+        mock(f"/__expire?user={user}")
+        before = logins_for(user)
+        restart_app(10)
+        shot(f"vencida_al_abrir_{user}")
+        nodes = dump()
+        on = texts(nodes)
+        edits = [n for n in nodes if n["cls"].endswith("EditText")]
+        left = [n["text"] for n in edits if user in n["text"] or pw in n["text"]]
+        warned = any("terminó" in x for x in on)
+        tries = logins_for(user) - before
+        log("OK" if warned and not left and tries <= 1 else "FALLO",
+            f"{style} al abrir: aviso {'sí' if warned else 'NO'}; campos "
+            f"{'vacíos' if not left else 'todavía con la cuenta vieja: ' + str(left)}; intentos con la cuenta vencida: "
+            f"{tries}; en pantalla: " + " | ".join(on[:8])[:260])
+        return True
+
+    # Empieza de cero.
     sh(f"am force-stop {PKG}")
     sh(f"pm clear {PKG}")
     sh(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
-    mock("/__activate?user=prueba")
-    mock("/__activate?user=nuevo")
+    for u in ("prueba", "nuevo"):
+        mock(f"/__activate?user={u}")
     t0 = now_dev()
     start_app()
     wait_qa(r"^NAV Login", t0, timeout=40)
     time.sleep(2.5)
-    t0 = now_dev()
-    if not enter_credentials("prueba", "1234"):
-        log("FALLO", "Demostración: no encontré los campos de entrada")
-        return
-    t, _ = wait_qa(r"^NAV Home", t0, timeout=60)
-    if not t:
-        log("FALLO", "Demostración: no entró con la cuenta de prueba: " + " | ".join(texts(dump())[:10]))
-        return
-    time.sleep(4)
 
-    # Se acaba la demostración y el cliente vuelve a abrir la app.
-    mock("/__expire?user=prueba")
+    # 1) Demostración vencida que el servidor marca como "Expired".
+    if not expired_on_open("prueba", "1234", "Demo vencida (Expired)"):
+        return
     before = logins_for("prueba")
-    sh(f"am force-stop {PKG}")
-    time.sleep(1.5)
-    start_app()
-    time.sleep(9)
-    shot("demo_vencida_al_abrir")
-    nodes = dump()
-    on = texts(nodes)
-    edits = [n for n in nodes if n["cls"].endswith("EditText")]
-    left = [n["text"] for n in edits if "prueba" in n["text"] or "1234" in n["text"]]
-    warned = any("terminó" in t for t in on)
-    tries = logins_for("prueba") - before
-    log("OK" if warned and not left and tries <= 1 else "FALLO",
-        f"Demostración vencida al abrir: aviso {'sí' if warned else 'NO'}; campos "
-        f"{'vacíos' if not left else 'todavía con la demo: ' + str(left)}; intentos con la demo vencida: {tries}; "
-        "en pantalla: " + " | ".join(on[:8])[:260])
-
-    # Al abrirla otra vez ya no vuelve a probar la demo vencida (no se juntan intentos fallidos).
-    before = logins_for("prueba")
-    sh(f"am force-stop {PKG}")
-    time.sleep(1.5)
-    start_app()
-    time.sleep(7)
+    restart_app(7)
     again = logins_for("prueba") - before
     log("OK" if again == 0 else "FALLO", f"Al volver a abrir la app ya no prueba la demo vencida (intentos: {again})")
 
-    # El cliente escribe el usuario nuevo y entra a la primera, sin borrar la app.
+    # 2) Cuenta vencida que el servidor rechaza con 403 (así contesta el servidor real).
+    if not expired_on_open("nuevo", "5678", "Cuenta vencida (403)"):
+        return
+
+    # 3) Le mandan otro usuario (aquí: se reactiva "nuevo") y entra a la primera, sin borrar la app.
+    mock("/__activate?user=nuevo")
     t0 = now_dev()
     enter_credentials("nuevo", "5678")
     t, _ = wait_qa(r"^NAV Home", t0, timeout=60)
@@ -777,7 +786,7 @@ def demo_expiry():
         return
     time.sleep(4)
 
-    # Se vence mientras ve un canal: no se queda reintentando y lleva a escribir el usuario nuevo.
+    # 4) Se vence mientras ve un canal: no se queda reintentando y lleva a escribir el usuario nuevo.
     if not open_section("live"):
         return
     keys(DOWN, wait=0.6)
