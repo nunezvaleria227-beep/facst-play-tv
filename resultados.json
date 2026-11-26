@@ -1,0 +1,183 @@
+{
+ "navs": [
+  {
+   "seccion": "movies",
+   "ms": 302,
+   "peor_trabon_ms": 293
+  },
+  {
+   "seccion": "live",
+   "ms": 150,
+   "peor_trabon_ms": 160
+  },
+  {
+   "seccion": "movies",
+   "ms": 115,
+   "peor_trabon_ms": 110
+  },
+  {
+   "seccion": "series",
+   "ms": 114,
+   "peor_trabon_ms": 118
+  },
+  {
+   "seccion": "live",
+   "ms": 115,
+   "peor_trabon_ms": 165
+  },
+  {
+   "seccion": "movies",
+   "ms": 107,
+   "peor_trabon_ms": 164
+  },
+  {
+   "seccion": "series",
+   "ms": 99,
+   "peor_trabon_ms": 161
+  },
+  {
+   "seccion": "live",
+   "ms": 102,
+   "peor_trabon_ms": 187
+  },
+  {
+   "seccion": "movies",
+   "ms": 113,
+   "peor_trabon_ms": 109
+  },
+  {
+   "seccion": "series",
+   "ms": 89,
+   "peor_trabon_ms": 139
+  },
+  {
+   "seccion": "movies",
+   "ms": 89,
+   "peor_trabon_ms": 0
+  },
+  {
+   "seccion": "movies",
+   "ms": 95,
+   "peor_trabon_ms": 143
+  },
+  {
+   "seccion": "series",
+   "ms": 94,
+   "peor_trabon_ms": 215
+  },
+  {
+   "seccion": "live",
+   "ms": 103,
+   "peor_trabon_ms": 179
+  },
+  {
+   "seccion": "live",
+   "ms": 143,
+   "peor_trabon_ms": 205
+  },
+  {
+   "seccion": "movies",
+   "ms": 169,
+   "peor_trabon_ms": 227
+  },
+  {
+   "seccion": "live",
+   "ms": 108,
+   "peor_trabon_ms": 119
+  },
+  {
+   "seccion": "live",
+   "ms": 115,
+   "peor_trabon_ms": 306
+  }
+ ],
+ "moves": [
+  {
+   "seccion": "live",
+   "accion": "cambiar categorías",
+   "trabones": 27,
+   "peor_ms": 427,
+   "total_ms": 5721
+  },
+  {
+   "seccion": "live",
+   "accion": "bajar rápido",
+   "trabones": 2,
+   "peor_ms": 201,
+   "total_ms": 314
+  },
+  {
+   "seccion": "movies",
+   "accion": "pasar de fila y recorrerla",
+   "trabones": 23,
+   "peor_ms": 228,
+   "total_ms": 3533
+  },
+  {
+   "seccion": "movies",
+   "accion": "bajar rápido",
+   "trabones": 2,
+   "peor_ms": 155,
+   "total_ms": 265
+  },
+  {
+   "seccion": "series",
+   "accion": "pasar de fila y recorrerla",
+   "trabones": 9,
+   "peor_ms": 151,
+   "total_ms": 1195
+  },
+  {
+   "seccion": "series",
+   "accion": "bajar rápido",
+   "trabones": 0,
+   "peor_ms": 0,
+   "total_ms": 0
+  },
+  {
+   "seccion": "live",
+   "accion": "cambiar categorías",
+   "trabones": 6,
+   "peor_ms": 241,
+   "total_ms": 967
+  },
+  {
+   "seccion": "live",
+   "accion": "bajar rápido",
+   "trabones": 1,
+   "peor_ms": 183,
+   "total_ms": 183
+  },
+  {
+   "seccion": "movies",
+   "accion": "pasar de fila y recorrerla",
+   "trabones": 5,
+   "peor_ms": 170,
+   "total_ms": 698
+  },
+  {
+   "seccion": "movies",
+   "accion": "bajar rápido",
+   "trabones": 0,
+   "peor_ms": 0,
+   "total_ms": 0
+  },
+  {
+   "seccion": "series",
+   "accion": "pasar de fila y recorrerla",
+   "trabones": 0,
+   "peor_ms": 0,
+   "total_ms": 0
+  },
+  {
+   "seccion": "series",
+   "accion": "bajar rápido",
+   "trabones": 0,
+   "peor_ms": 0,
+   "total_ms": 0
+  }
+ ],
+ "crashes": 0,
+ "anrs": 0,
+ "fails": 0
+}
