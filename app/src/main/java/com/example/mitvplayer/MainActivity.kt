@@ -55,6 +55,15 @@ class MainActivity : ComponentActivity() {
         return super.dispatchGenericMotionEvent(event)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // El reproductor detectó que la cuenta se acabó (por ejemplo, la demostración): a escribir el usuario nuevo.
+        com.example.mitvplayer.data.AccountWatch.endedMessage?.let { message ->
+            com.example.mitvplayer.data.AccountWatch.endedMessage = null
+            viewModel.endSession(message)
+        }
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         // Al volver de otra app o de una ventana del sistema, las barras se vuelven a esconder.

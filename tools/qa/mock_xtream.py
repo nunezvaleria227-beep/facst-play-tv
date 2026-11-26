@@ -24,6 +24,13 @@ from urllib.parse import parse_qs, urlparse
 HOST = "http://10.0.2.2:8880"
 USER = "demo"
 PASS = "demo"
+
+# Cuentas de prueba: "prueba" y "nuevo" se pueden vencer con /__expire?user=… (como una demostración que se acaba).
+ACCOUNTS = {
+    "demo": {"pass": "demo", "status": "Active"},
+    "prueba": {"pass": "1234", "status": "Active"},
+    "nuevo": {"pass": "5678", "status": "Active"},
+}
 MEDIA = "."
 RATE = 0  # bytes por segundo para las listas grandes (0 = sin límite)
 LOG = []
@@ -336,12 +343,28 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.do_GET()
 
+    def account_ok(self, path):
+        """/live/usuario/contraseña/…: la cuenta existe y está activa (si no, el video se rechaza con 403)."""
+        parts = path.strip("/").split("/")
+        if len(parts) < 4:
+            return True
+        acc = ACCOUNTS.get(parts[1])
+        return acc is not None and acc["pass"] == parts[2] and acc["status"] == "Active"
+
     def do_GET(self):
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         path = url.path
         if path == "/player_api.php":
             return self.api(q)
+        if path == "/__expire" or path == "/__activate":
+            acc = ACCOUNTS.get(q.get("user", ""))
+            if acc is None:
+                return self.send_bytes(b"no existe", "text/plain", 404)
+            acc["status"] = "Expired" if path == "/__expire" else "Active"
+            return self.send_bytes(acc["status"].encode(), "text/plain")
+        if (path.startswith("/live/") or path.startswith("/movie/") or path.startswith("/series/")) and not self.account_ok(path):
+            return self.send_bytes(b"cuenta vencida", "text/plain", 403)
         if path.startswith("/live/"):
             return self.live(path)
         if path.startswith("/movie/") or path.startswith("/series/"):
@@ -372,14 +395,20 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_file(os.path.join(MEDIA, name), "image/jpeg")
 
     def api(self, q):
-        if q.get("username") != USER or q.get("password") != PASS:
+        user = q.get("username", "")
+        acc = ACCOUNTS.get(user)
+        if acc is None or q.get("password") != acc["pass"]:
             return self.send_json({"user_info": {"auth": 0}})
         action = q.get("action")
+        if action is not None and acc["status"] != "Active":
+            return self.send_json({"user_info": {"auth": 0}})
         if action is None:
+            expired = acc["status"] != "Active"
             return self.send_json({
                 "user_info": {
-                    "username": USER, "password": PASS, "message": "Bienvenido a la prueba", "auth": 1,
-                    "status": "Active", "exp_date": str(int(time.time()) + 90 * 86400), "is_trial": "0",
+                    "username": user, "password": acc["pass"], "message": "Bienvenido a la prueba", "auth": 1,
+                    "status": acc["status"],
+                    "exp_date": str(int(time.time()) + (-3600 if expired else 90 * 86400)), "is_trial": "0",
                     "active_cons": "0", "created_at": "1600000000", "max_connections": "2",
                     "allowed_output_formats": ["m3u8", "ts", "rtmp"],
                 },

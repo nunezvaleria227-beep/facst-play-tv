@@ -79,6 +79,29 @@ object FailureReport {
         }, "aviso-falla").start()
     }
 
+    /**
+     * Un cliente no pudo entrar: el motivo (cuenta vencida, datos incorrectos, el servidor no contestó…) llega
+     * al celular. Uno por cliente y motivo cada 2 horas. Nunca se manda la contraseña.
+     */
+    fun login(context: Context, user: String, reason: String, detail: String, automatic: Boolean) {
+        if (!enabled(context)) return
+        val app = context.applicationContext
+        Thread({
+            sendBlocking(
+                app,
+                key = "entrada:$user:$reason",
+                title = "Facst Play TV · no pudo entrar: ${user.ifBlank { "—" }}",
+                lines = listOf(
+                    "Motivo: $reason",
+                    "Mensaje en pantalla: $detail",
+                    if (automatic) "Fue al abrir la app (sesión guardada)" else "Fue al escribir usuario y contraseña"
+                ),
+                priority = 3,
+                tags = listOf("key")
+            )
+        }, "aviso-entrada").start()
+    }
+
     private fun sendBlocking(
         context: Context,
         key: String,

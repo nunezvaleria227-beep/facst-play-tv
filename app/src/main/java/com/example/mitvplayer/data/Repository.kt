@@ -87,11 +87,44 @@ class Repository(
     }
 
     /**
+     * La cuenta guardada ya no sirve (demostración vencida, etc.): se olvida para que la app no la vuelva a
+     * probar cada vez que se abre. Solo si es la misma que se acaba de rechazar.
+     */
+    fun forgetSavedSessionIf(rejected: Credentials) {
+        val saved = try {
+            session.load()
+        } catch (e: Exception) {
+            null
+        } ?: return
+        if (saved.username == rejected.username && saved.password == rejected.password) session.clear()
+    }
+
+    /** Revisa en el servidor si la cuenta actual sigue sirviendo. null = sí sirve, o no se pudo saber (sin internet…). */
+    fun checkAccount(): AccountRejectedException? {
+        val c = credentials ?: return null
+        return try {
+            api.login(c)
+            null
+        } catch (e: AccountRejectedException) {
+            e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
      * Inicia sesión con la identificación (User-Agent) actual. Si el servidor la rechaza con 401/403,
      * prueba las otras de [Config.userAgentOptions] y guarda la primera que funcione.
      */
     private fun loginTryingAgents(c: Credentials): AccountInfo {
-        val candidates = (listOf(Config.userAgent) + Config.userAgentOptions()).distinct()
+        // Si este servidor ya aceptó una identificación antes, un rechazo ahora no es por la identificación
+        // (es la cuenta o un bloqueo): probar las demás solo sumaría intentos fallidos.
+        val confirmed = networkPrefs.getString(KEY_USER_AGENT, null) != null
+        val candidates = if (confirmed) {
+            listOf(Config.userAgent)
+        } else {
+            (listOf(Config.userAgent) + Config.userAgentOptions()).distinct()
+        }
         var denied: AccessDeniedException? = null
         for (agent in candidates) {
             Config.userAgent = agent
@@ -493,4 +526,14 @@ class Repository(
         const val EPG_CACHE_MAX = 600
         const val TABLE_CACHE_MAX = 120
     }
+}
+
+
+/**
+ * Aviso de que la cuenta dejó de servir mientras se veía algo (lo detecta el reproductor). La pantalla principal
+ * lo recoge al volver, cierra la sesión y deja lista la entrada para escribir el usuario nuevo.
+ */
+object AccountWatch {
+    @Volatile
+    var endedMessage: String? = null
 }

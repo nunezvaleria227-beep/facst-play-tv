@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 import traceback
+import urllib.request
 import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -306,6 +307,52 @@ def move_inside(key, take_shots=False):
         log("OK" if worst <= 400 and total <= 1500 else "LENTO",
             f"{key} · {label}: {len(lags)} trabones, peor {worst} ms, total {total} ms")
         report_lags(f"{key} · {label}", lags, limit=2)
+
+
+MOCK = "http://127.0.0.1:8880"
+
+
+def mock(path):
+    """Órdenes al servidor de prueba (vencer o activar cuentas, leer sus peticiones)."""
+    try:
+        with urllib.request.urlopen(MOCK + path, timeout=15) as r:
+            return r.read().decode("utf-8", "replace")
+    except Exception as e:
+        return f"error {e!r}"
+
+
+def logins_for(user):
+    """Cuántas veces la app intentó entrar con ese usuario (según el servidor de prueba)."""
+    return len([l for l in mock("/__log").splitlines()
+                if f"/player_api.php?username={user}&" in l and "action=" not in l])
+
+
+def streams_for(user):
+    return len([l for l in mock("/__log").splitlines() if f"/live/{user}/" in l])
+
+
+def enter_credentials(user, pw):
+    """Escribe usuario y contraseña en la pantalla de entrada y pulsa Entrar."""
+    edits = []
+    for _ in range(10):
+        nodes = dump()
+        edits = [n for n in nodes if n["cls"].endswith("EditText")]
+        if len(edits) >= 2:
+            break
+        time.sleep(1.5)
+    if len(edits) < 2:
+        return False
+    tap_node(edits[0], 0.6)
+    sh(f"input text {user}")
+    tap_node(edits[1], 0.6)
+    sh(f"input text {pw}")
+    time.sleep(0.5)
+    keys(ENTER, wait=0.6)
+    nodes = dump(quiet=True)
+    button = find(nodes, APP.get("login_button", ["Entrar"]), exact=True)
+    if button and len([n for n in nodes if n["cls"].endswith("EditText")]) >= 2:
+        tap_node(button, 0.3)
+    return True
 
 
 # ---------------------------------------------------------------------------------- pasos
@@ -669,6 +716,93 @@ def memory():
         log("INFO", f"Cuadros lentos según Android: {jank.group(1)} ({jank.group(2)}%) — en el emulador sin GPU real esto es normal")
 
 
+@step("demostración vencida y usuario nuevo")
+def demo_expiry():
+    # Empieza de cero y entra con una cuenta de demostración ("prueba").
+    sh(f"am force-stop {PKG}")
+    sh(f"pm clear {PKG}")
+    sh(f"pm grant {PKG} android.permission.POST_NOTIFICATIONS")
+    mock("/__activate?user=prueba")
+    mock("/__activate?user=nuevo")
+    t0 = now_dev()
+    start_app()
+    wait_qa(r"^NAV Login", t0, timeout=40)
+    time.sleep(2.5)
+    t0 = now_dev()
+    if not enter_credentials("prueba", "1234"):
+        log("FALLO", "Demostración: no encontré los campos de entrada")
+        return
+    t, _ = wait_qa(r"^NAV Home", t0, timeout=60)
+    if not t:
+        log("FALLO", "Demostración: no entró con la cuenta de prueba: " + " | ".join(texts(dump())[:10]))
+        return
+    time.sleep(4)
+
+    # Se acaba la demostración y el cliente vuelve a abrir la app.
+    mock("/__expire?user=prueba")
+    before = logins_for("prueba")
+    sh(f"am force-stop {PKG}")
+    time.sleep(1.5)
+    start_app()
+    time.sleep(9)
+    shot("demo_vencida_al_abrir")
+    nodes = dump()
+    on = texts(nodes)
+    edits = [n for n in nodes if n["cls"].endswith("EditText")]
+    left = [n["text"] for n in edits if "prueba" in n["text"] or "1234" in n["text"]]
+    warned = any("terminó" in t for t in on)
+    tries = logins_for("prueba") - before
+    log("OK" if warned and not left and tries <= 1 else "FALLO",
+        f"Demostración vencida al abrir: aviso {'sí' if warned else 'NO'}; campos "
+        f"{'vacíos' if not left else 'todavía con la demo: ' + str(left)}; intentos con la demo vencida: {tries}; "
+        "en pantalla: " + " | ".join(on[:8])[:260])
+
+    # Al abrirla otra vez ya no vuelve a probar la demo vencida (no se juntan intentos fallidos).
+    before = logins_for("prueba")
+    sh(f"am force-stop {PKG}")
+    time.sleep(1.5)
+    start_app()
+    time.sleep(7)
+    again = logins_for("prueba") - before
+    log("OK" if again == 0 else "FALLO", f"Al volver a abrir la app ya no prueba la demo vencida (intentos: {again})")
+
+    # El cliente escribe el usuario nuevo y entra a la primera, sin borrar la app.
+    t0 = now_dev()
+    enter_credentials("nuevo", "5678")
+    t, _ = wait_qa(r"^NAV Home", t0, timeout=60)
+    shot("usuario_nuevo_adentro")
+    log("OK" if t else "FALLO", "Con el usuario nuevo entra a la primera" if t else
+        "Con el usuario nuevo NO entró: " + " | ".join(texts(dump())[:10]))
+    if not t:
+        return
+    time.sleep(4)
+
+    # Se vence mientras ve un canal: no se queda reintentando y lleva a escribir el usuario nuevo.
+    if not open_section("live"):
+        return
+    keys(DOWN, wait=0.6)
+    keys(OK, wait=8)
+    if "PlayerActivity" not in top_activity():
+        log("FALLO", "Vencida viendo: no abrió el canal: " + top_activity()[-70:])
+        return
+    mock("/__expire?user=nuevo")
+    before = streams_for("nuevo")
+    keys(DOWN, wait=9)  # cambia de canal: el servidor ya rechaza el video
+    shot("vencida_viendo")
+    on = texts(dump(quiet=True))
+    asked = streams_for("nuevo") - before
+    log("INFO", f"Vencida viendo: en pantalla: {' | '.join(on[:6])[:220]}; pedidos de video después de vencerse: {asked}")
+    t0 = now_dev()
+    keys(OK, wait=0.3)
+    t, _ = wait_qa(r"^NAV Login", t0, timeout=15)
+    time.sleep(2.5)
+    shot("vencida_viendo_entrada")
+    on = texts(dump())
+    log("OK" if t and any("terminó" in x for x in on) else "FALLO",
+        "Vencida viendo: OK lleva a la entrada con el aviso" if t else "Vencida viendo: no regresó a la entrada")
+    log("OK" if asked <= 8 else "FALLO", f"Vencida viendo: no se queda reintentando ({asked} pedidos al servidor)")
+
+
 def final():
     lines = qa_lines(0)
     with open(os.path.join(OUT, "qa-marcas.txt"), "w") as f:
@@ -705,6 +839,7 @@ def main():
         settings()
         reopen()
         memory()
+        demo_expiry()
     final()
 
 
